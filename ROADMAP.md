@@ -52,7 +52,7 @@ starting work; reorder freely when pull demands.
 
 ### Parity with webhook.site (must ship eventually)
 
-1. **JS scripting in mock reply** *(small → medium)* ✓ backend shipped. Toggle a
+1. **JS scripting in mock reply** *(small → medium)* ✓ shipped (backend + script editor textarea with 200ms-timeout + 8KB cap badge). Toggle a
    script that mutates the response from request context.
    `node:vm` behind a feature flag, strict mode, no `require`,
    no outbound `fetch`. This is webhook.site's signature
@@ -72,7 +72,7 @@ starting work; reorder freely when pull demands.
    captures, see headers + body diffed visually with lines
    highlighted per byte/char change. Webhook.site has nothing
    comparable.
-5. **Schema-history sparkline** *(medium)* ✓ backend shipped (data layer + GET /schema-history). Per field, sparkline
+5. **Schema-history sparkline** *(medium)* ✓ shipped (sidebar panel polls /schema-history every 5s, ranks top-level fields by occurrence, mini-sparkline per field). Per field, sparkline
    of presence + type over time. "Field `metadata.refund_reason`
    appeared on 3 of the last 5 events." Big wedge, requires
    ingesting and aggregating schema snapshots.
@@ -82,7 +82,7 @@ starting work; reorder freely when pull demands.
 
 ### AI / MCP wedge (moat)
 
-7. **MCP server** *(medium → large)* ✓ backend shipped (5 tools via stdio, inbox-scoped auth). stdio + HTTP transport.
+7. **MCP server** *(medium → large)* ✓ shipped (backend 5 stdio tools + McpTokenCard sidebar component with copy + curl-style usage snippet). stdio + HTTP transport.
    Auth via inbox-scoped API key by default. Tools:
    `list_events`, `get_event`, `search_events`, `diff_events`,
    `explain_event`, `create_endpoint`. Closes the
@@ -140,6 +140,16 @@ starting work; reorder freely when pull demands.
   folder. Orchestrator wiring lives in apps/api/src/index.js.
   Smoke count: docker stack + 3 new endpoints + limit-rate +
   schema-history validation. 136 / 136 tests in apps/api.
+- v0.6: shipped frontend for the four previously backend-only
+  features. McpTokenCard surfaces mcp_token in the sidebar with
+  copy + a MCP quick-start snippet (no agent-side wiring yet;
+  commands documented inline). SchemaSparkline sidebar panel
+  polls /schema-history every 5s and renders top-level fields
+  ranked by occurrence. ResponseConfigPanel now has a sibling
+  "use js script" toggle paired with a textarea + 8192-char
+  counter (red on overflow, save disabled). Landing now persists
+  mcpToken in localStorage + navigate state so the inspector
+  finds it on load.
 - v0.4: shipped #14 self-host docker-compose (one-command
   bring-up of mongo + api + web with healthchecks and SPA-aware
   nginx; verified end-to-end with a scripted POST round-trip
