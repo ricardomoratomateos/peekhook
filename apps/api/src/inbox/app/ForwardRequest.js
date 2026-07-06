@@ -1,3 +1,5 @@
+import { checkForwardLoop } from '../domain/loopRule.js'
+
 /**
  * ForwardRequest — proxies a captured incoming request out to a configured
  * HTTP(S) target. Pure adapter: no persistence, no capture. The caller
@@ -114,15 +116,7 @@ export class ForwardRequest {
   }
 
   #isLoop(target) {
-    if (!this.ingestOrigin) return false
-    let ingestURL
-    try {
-      ingestURL = new URL(this.ingestOrigin)
-    } catch (_err) {
-      return false
-    }
-    if (target.origin !== ingestURL.origin) return false
-    return target.pathname.startsWith('/i/')
+    return !checkForwardLoop(target.toString(), this.ingestOrigin).ok
   }
 }
 
