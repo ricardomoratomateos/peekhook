@@ -21,6 +21,15 @@ export async function connectDb() {
     { expireAfterSeconds: 0 }
   )
 
+  await db.collection('payload_schemas').createIndex(
+    { inboxToken: 1 },
+    { unique: true }
+  )
+  await db.collection('payload_schemas').createIndex(
+    { expiresAt: 1 },
+    { expireAfterSeconds: 0 }
+  )
+
   console.log(`MongoDB connected: ${config.mongoUri}`)
   return db
 }

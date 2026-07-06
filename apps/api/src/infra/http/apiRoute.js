@@ -6,18 +6,22 @@ import { CreateInbox } from '../../app/CreateInbox.js'
 import { ListRequests } from '../../app/ListRequests.js'
 import { GetRequest } from '../../app/GetRequest.js'
 import { ConfigureResponse } from '../../app/ConfigureResponse.js'
+import { GetSchemaHistory } from '../../features/schema-history/app/GetSchemaHistory.js'
 import { MongoInboxRepository } from '../persistence/MongoInboxRepository.js'
 import { MongoRequestListReadModel } from '../persistence/MongoRequestListReadModel.js'
+import { MongoPayloadSchemaRepository } from '../../features/schema-history/infra/MongoPayloadSchemaRepository.js'
 
 function makeUseCases() {
   const db = getDb()
-  const readModel = new MongoRequestListReadModel(db)
-  const inboxRepo = new MongoInboxRepository(db)
+  const readModel  = new MongoRequestListReadModel(db)
+  const inboxRepo  = new MongoInboxRepository(db)
+  const schemaRepo = new MongoPayloadSchemaRepository(db)
   return {
     createInbox:       new CreateInbox({ inboxes: inboxRepo }),
     listRequests:      new ListRequests({ requests: readModel }),
     getRequest:        new GetRequest({ requests: readModel }),
     configureResponse: new ConfigureResponse({ inboxes: inboxRepo }),
+    getSchemaHistory:  new GetSchemaHistory({ schemas: schemaRepo }),
   }
 }
 
@@ -132,6 +136,20 @@ export default async function apiRoute(fastify) {
       expiresAt: inbox.expiresAt,
       responseConfig: inbox.responseConfig ?? null,
     })
+  })
+
+  fastify.get('/api/inboxes/:token/schema-history', async (request, reply) => {
+    const { token } = request.params
+    const db = getDb()
+    const inbox = await db.collection('inboxes').findOne(
+      { token },
+      { projection: { _id: 0 } },
+    )
+    if (!inbox) return reply.code(404).send({ error: 'Inbox not found' })
+
+    const { getSchemaHistory } = makeUseCases()
+    const result = await getSchemaHistory.execute({ inboxToken: token })
+    return reply.send(result)
   })
 
   fastify.put('/api/inboxes/:token/response', async (request, reply) => {

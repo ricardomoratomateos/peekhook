@@ -10,17 +10,25 @@ import { CapturedRequest } from '../domain/CapturedRequest.js'
  * the Outcome so the transport adapter can apply it (or fall back to the
  * default acknowledgement).
  *
+ * Optional `recordSchema` use case: when supplied, the request body is also
+ * folded into the inbox's payload schema history (ROADMAP #5/#6). The call
+ * is wrapped in try/catch — analytics must never fail the user-visible
+ * capture. When omitted, this use case is a clean pass-through: identical
+ * behavior to the schema-history-agnostic baseline.
+ *
  * @param {{
- *   inboxes:  import('../domain/InboxRepository.js').InboxRepository,
- *   requests: import('../domain/CapturedRequestRepository.js').CapturedRequestRepository,
+ *   inboxes:      import('../domain/InboxRepository.js').InboxRepository,
+ *   requests:     import('../domain/CapturedRequestRepository.js').CapturedRequestRepository,
+ *   recordSchema?: { execute(cmd: { inboxToken: string, body: string }): Promise<void> },
  *   now?: () => Date,
  * }} deps
  */
 export class CaptureRequest {
-  constructor({ inboxes, requests, now }) {
-    this.inboxes  = inboxes
-    this.requests = requests
-    this.now      = now ?? (() => new Date())
+  constructor({ inboxes, requests, recordSchema, now }) {
+    this.inboxes      = inboxes
+    this.requests     = requests
+    this.recordSchema = recordSchema ?? null
+    this.now          = now ?? (() => new Date())
   }
 
   /**
@@ -60,6 +68,15 @@ export class CaptureRequest {
     })
 
     await this.requests.insert(req)
+
+    if (this.recordSchema) {
+      try {
+        await this.recordSchema.execute({ inboxToken, body: body ?? '' })
+      } catch (_err) {
+        /* analytics failure must not fail the capture */
+      }
+    }
+
     return { outcome: Outcome.CAPTURED, id, responseConfig: inbox.responseConfig ?? null }
   }
 }

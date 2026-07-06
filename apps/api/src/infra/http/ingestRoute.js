@@ -3,12 +3,16 @@ import { CaptureRequest } from '../../app/CaptureRequest.js'
 import { Outcome } from '../../domain/Outcome.js'
 import { MongoInboxRepository } from '../persistence/MongoInboxRepository.js'
 import { MongoCapturedRequestRepository } from '../persistence/MongoCapturedRequestRepository.js'
+import { MongoPayloadSchemaRepository } from '../../features/schema-history/infra/MongoPayloadSchemaRepository.js'
+import { RecordSchema } from '../../features/schema-history/app/RecordSchema.js'
 
 function makeCaptureRequest() {
   const db = getDb()
+  const schemas = new MongoPayloadSchemaRepository(db)
   return new CaptureRequest({
-    inboxes:  new MongoInboxRepository(db),
-    requests: new MongoCapturedRequestRepository(db),
+    inboxes:      new MongoInboxRepository(db),
+    requests:     new MongoCapturedRequestRepository(db),
+    recordSchema: new RecordSchema({ schemas }),
   })
 }
 
