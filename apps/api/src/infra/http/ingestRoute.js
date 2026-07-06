@@ -3,6 +3,8 @@ import { CaptureRequest } from '../../app/CaptureRequest.js'
 import { Outcome } from '../../domain/Outcome.js'
 import { MongoInboxRepository } from '../persistence/MongoInboxRepository.js'
 import { MongoCapturedRequestRepository } from '../persistence/MongoCapturedRequestRepository.js'
+import { runScript } from '../../features/scripting/index.js'
+import { ScriptOutcome } from '../../features/scripting/domain/ScriptErrors.js'
 
 function makeCaptureRequest() {
   const db = getDb()
@@ -45,10 +47,30 @@ async function captureHandler(request, reply) {
 
   const cfg = result.responseConfig
   if (cfg && cfg.enabled) {
+    let body = cfg.body
+    if (cfg.scriptEnabled && typeof cfg.script === 'string' && cfg.script.length > 0) {
+      const scriptResult = await runScript.execute({
+        script: cfg.script,
+        request: {
+          method:      request.method,
+          path,
+          headers:     request.headers,
+          body:        rawBody,
+          contentType,
+          query,
+        },
+      })
+
+      if (scriptResult.outcome === ScriptOutcome.OK) {
+        body = scriptResult.body
+      } else if (scriptResult.outcome === ScriptOutcome.THREW) {
+        return reply.code(500).send({ error: 'script threw' })
+      }
+    }
     return reply
       .code(cfg.status)
       .header('content-type', cfg.contentType)
-      .send(cfg.body)
+      .send(body)
   }
 
   return reply.code(200).send({ ok: true, id: result.id.toString() })

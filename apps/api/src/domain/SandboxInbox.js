@@ -3,11 +3,16 @@ import crypto from 'node:crypto'
 const INBOX_TTL_MS = 7 * 24 * 60 * 60 * 1000
 
 const DEFAULT_RESPONSE = { enabled: false, status: 200, contentType: 'application/json', body: '' }
+const SCRIPT_MAX_BYTES = 8 * 1024
 
 /**
  * Pure validator for sandbox response configurations, exposed so the
  * ConfigureResponse use case can validate at the boundary without needing
  * a rehydrated SandboxInbox aggregate. Throws on invalid input.
+ *
+ * Optional scripting fields:
+ *   scriptEnabled — boolean. Defaults to false.
+ *   script        — string ≤ 8 KB, only checked when present.
  */
 export function validateResponseConfig(cfg) {
   if (cfg === null || cfg === undefined) return null
@@ -15,6 +20,17 @@ export function validateResponseConfig(cfg) {
   if (!Number.isInteger(cfg.status) || cfg.status < 100 || cfg.status > 599) throw new Error('responseConfig.status must be an integer 100–599')
   if (typeof cfg.contentType !== 'string' || cfg.contentType.length === 0) throw new Error('responseConfig.contentType must be a non-empty string')
   if (typeof cfg.body !== 'string') throw new Error('responseConfig.body must be a string')
+
+  if (cfg.scriptEnabled !== undefined && typeof cfg.scriptEnabled !== 'boolean') {
+    throw new Error('responseConfig.scriptEnabled must be boolean when present')
+  }
+  if (cfg.script !== undefined && cfg.script !== null) {
+    if (typeof cfg.script !== 'string') throw new Error('responseConfig.script must be a string when present')
+    if (Buffer.byteLength(cfg.script, 'utf8') > SCRIPT_MAX_BYTES) {
+      throw new Error('responseConfig.script exceeds 8 KB limit')
+    }
+  }
+
   return { ...DEFAULT_RESPONSE, ...cfg }
 }
 
