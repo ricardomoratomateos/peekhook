@@ -62,9 +62,12 @@ export const s = {
 
   copyTestBtn: { display: 'flex', alignItems: 'center', gap: '8px', margin: '0 12px 10px', padding: '6px 10px', background: 'transparent', border: `1px solid ${c.border}`, borderRadius: '6px', color: c.dim, fontFamily: c.sans, fontSize: '11.5px', cursor: 'pointer', transition: 'background 0.12s, border-color 0.12s, color 0.12s' },
 
-  listHead: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 16px 6px', flexShrink: 0 },
-  listHeadLabel: { fontFamily: c.mono, fontSize: '10px', fontWeight: 600, color: c.faint, letterSpacing: '0.2em', textTransform: 'uppercase' },
+  listHead: { display: 'flex', alignItems: 'center', gap: '8px', padding: '4px 16px 6px', flexShrink: 0 },
+  listHeadLabel: { fontFamily: c.mono, fontSize: '10px', fontWeight: 600, color: c.faint, letterSpacing: '0.2em', textTransform: 'uppercase', flex: 1 },
   listHeadCount: { fontFamily: c.mono, fontSize: '11px', color: c.dim },
+
+  searchToggle: { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', border: 'none', color: c.faint, cursor: 'pointer', padding: '2px 4px', borderRadius: '3px', transition: 'color 0.12s, background 0.12s' },
+  searchBox: { padding: '0 12px 6px', flexShrink: 0 },
   listRows: { flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '2px', padding: '0 8px 8px', minHeight: 0 },
   listEmpty: { display: 'flex', alignItems: 'center', gap: '10px', padding: '16px 12px' },
   listEmptyText: { fontFamily: c.mono, fontSize: '11px', color: c.faint },

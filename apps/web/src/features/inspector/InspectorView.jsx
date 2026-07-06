@@ -14,6 +14,7 @@ import EmptyState from './components/EmptyState.jsx'
 import ConnectingState from './components/ConnectingState.jsx'
 import McpTokenCard from './components/McpTokenCard.jsx'
 import SchemaSparkline from './components/SchemaSparkline.jsx'
+import SearchBar from './components/SearchBar.jsx'
 import { useBrowserNotify, useCaptureNotifications } from './lib/useBrowserNotify.js'
 import './animations.css'
 
@@ -309,6 +310,7 @@ function InboxTab({
   handleClearCompare,
   setShowDiff,
 }) {
+  const [searchOpen, setSearchOpen] = useState(false)
   return (
     <>
       <div style={s.ctxRow}>
@@ -337,6 +339,16 @@ function InboxTab({
         <span style={{ flex: 1 }}>{copiedTest ? 'copied' : 'copy a test request'}</span>
       </button>
 
+      {searchOpen && (
+        <div style={searchBoxStyle}>
+          <SearchBar
+            token={token}
+            onResults={setSearchResults}
+            onClear={() => setSearchResults(null)}
+          />
+        </div>
+      )}
+
       <div style={s.listHead}>
         <span style={s.listHeadLabel}>
           {searchResults ? 'search results' : 'requests'}
@@ -344,6 +356,19 @@ function InboxTab({
         {displayedRequests.length > 0 && (
           <span style={s.listHeadCount}>{displayedRequests.length}</span>
         )}
+        <button
+          type="button"
+          onClick={() => setSearchOpen(o => !o)}
+          className="sb-searchtoggle"
+          style={searchToggleBtn}
+          aria-label={searchOpen ? 'close search' : 'open search'}
+          aria-expanded={searchOpen}
+          title="search (regex or natural language)"
+        >
+          <span className="material-symbols-outlined" style={{ fontSize: '14px', lineHeight: 1 }}>
+            {searchOpen ? 'close' : 'search'}
+          </span>
+        </button>
       </div>
 
       {compareIds.length > 0 && (
