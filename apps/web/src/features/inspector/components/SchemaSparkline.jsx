@@ -6,6 +6,7 @@ import { sc } from '../styles.js'
 export default function SchemaSparkline({ token }) {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [expanded, setExpanded] = useState(() => new Set())
 
   useEffect(() => {
     let cancelled = false
@@ -31,17 +32,15 @@ export default function SchemaSparkline({ token }) {
     }
   }, [token])
 
-  const { topLevel, nested, totalOcc } = useMemo(() => {
-    if (!data?.fields) return { topLevel: [], nested: [], totalOcc: 0 }
-    const top = data.fields
-      .filter(f => !f.path.includes('.'))
-      .sort((a, b) => b.occurrences - a.occurrences)
-    const nst = data.fields
-      .filter(f => f.path.includes('.'))
-      .sort((a, b) => b.occurrences - a.occurrences)
-    const total = data.fields.reduce((s, f) => s + f.occurrences, 0)
-    return { topLevel: top, nested: nst, totalOcc: total }
-  }, [data])
+  const tree = useMemo(() => buildTree(data?.fields || []), [data])
+  const totalOcc = useMemo(
+    () => (data?.fields || []).reduce((s, f) => s + f.occurrences, 0),
+    [data]
+  )
+  const flatRows = useMemo(
+    () => flatten(tree, 0, expanded),
+    [tree, expanded]
+  )
 
   if (loading && !data) return null
   if (!data || !data.fields || data.fields.length === 0) {
@@ -57,72 +56,180 @@ export default function SchemaSparkline({ token }) {
     )
   }
 
+  const toggle = (path) => {
+    setExpanded(prev => {
+      const next = new Set(prev)
+      if (next.has(path)) next.delete(path)
+      else next.add(path)
+      return next
+    })
+  }
+
   return (
     <div style={sc.section}>
       <div style={sc.card}>
         <div style={sc.cardHead}>
-          <span style={sc.cardTitle}>top-level fields</span>
+          <span style={sc.cardTitle}>fields</span>
           <span style={sc.cardMeta}>
-            {topLevel.length} fields · {totalOcc} total occurrences
+            {data.fields.length} fields · {totalOcc} total occurrences
           </span>
         </div>
-        {topLevel.length === 0 ? (
-          <div style={sc.empty}>no top-level fields yet</div>
-        ) : (
-          <div style={sc.table}>
-            <div style={sc.tableHead}>
-              <span>path</span>
-              <span>type</span>
-              <span>n</span>
-              <span>shape</span>
-            </div>
-            {topLevel.map((f, idx) => (
+        <div style={sc.table}>
+          <div style={sc.tableHead}>
+            <span>path</span>
+            <span>type</span>
+            <span>n</span>
+            <span>shape</span>
+          </div>
+          {flatRows.map((row, idx) => {
+            const isLast = idx === flatRows.length - 1
+            return (
               <div
-                key={f.path}
-                style={idx === topLevel.length - 1 ? { ...sc.tableRow, ...sc.tableRowLast } : sc.tableRow}
+                key={row.path}
+                onClick={row.hasChildren ? () => toggle(row.path) : undefined}
+                style={
+                  isLast
+                    ? { ...sc.tableRow, ...sc.tableRowLast, ...(row.hasChildren ? rowClickable : null) }
+                    : { ...sc.tableRow, ...(row.hasChildren ? rowClickable : null) }
+                }
+                role={row.hasChildren ? 'button' : undefined}
+                aria-expanded={row.hasChildren ? expanded.has(row.path) : undefined}
+                tabIndex={row.hasChildren ? 0 : undefined}
+                onKeyDown={row.hasChildren ? (e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    toggle(row.path)
+                  }
+                } : undefined}
               >
-                <span style={sc.pathMono}>{f.path}</span>
-                <span style={sc.typeTag}>{f.type}</span>
-                <span style={sc.countMono}>{f.occurrences}</span>
-                <Sparkline n={f.occurrences} />
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', paddingLeft: `${row.depth * 18}px`, minWidth: 0 }}>
+                  {row.hasChildren ? (
+                    <span
+                      style={{
+                        ...caret,
+                        transform: expanded.has(row.path) ? 'rotate(90deg)' : 'rotate(0deg)',
+                      }}
+                    >
+                      ▸
+                    </span>
+                  ) : (
+                    <span style={caretPlaceholder} />
+                  )}
+                  <span style={sc.pathMono}>{row.leaf}</span>
+                </div>
+                <span style={sc.typeTag}>{row.type}</span>
+                <span style={sc.countMono}>{row.n}</span>
+                <Sparkline n={row.n} variant={row.hasChildren && !row.field ? 'parent' : 'leaf'} />
               </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {nested.length > 0 && (
-        <div style={sc.card}>
-          <div style={sc.cardHead}>
-            <span style={sc.cardTitle}>nested fields</span>
-            <span style={sc.cardMeta}>{nested.length} paths</span>
-          </div>
-          <div style={sc.table}>
-            <div style={sc.tableHead}>
-              <span>path</span>
-              <span>type</span>
-              <span>n</span>
-              <span>shape</span>
-            </div>
-            {nested.map((f, idx) => (
-              <div
-                key={f.path}
-                style={idx === nested.length - 1 ? { ...sc.tableRow, ...sc.tableRowLast } : sc.tableRow}
-              >
-                <span style={sc.pathMono}>{f.path}</span>
-                <span style={sc.typeTag}>{f.type}</span>
-                <span style={sc.countMono}>{f.occurrences}</span>
-                <Sparkline n={f.occurrences} />
-              </div>
-            ))}
-          </div>
+            )
+          })}
         </div>
-      )}
+      </div>
     </div>
   )
 }
 
-function Sparkline({ n }) {
+const caret = {
+  display: 'inline-block',
+  fontSize: '10px',
+  color: c.faint,
+  lineHeight: 1,
+  transition: 'transform 120ms ease',
+  transformOrigin: 'center',
+  width: '12px',
+  textAlign: 'center',
+}
+
+const caretPlaceholder = {
+  display: 'inline-block',
+  width: '12px',
+  height: '12px',
+}
+
+const rowClickable = {
+  cursor: 'pointer',
+}
+
+function buildTree(fields) {
+  const root = { children: new Map() }
+  for (const f of fields) {
+    const parts = f.path.split('.')
+    let node = root
+    let acc = ''
+    for (let i = 0; i < parts.length; i++) {
+      acc = acc ? acc + '.' + parts[i] : parts[i]
+      if (!node.children.has(parts[i])) {
+        node.children.set(parts[i], { children: new Map(), path: acc, leaf: parts[i] })
+      }
+      node = node.children.get(parts[i])
+    }
+    node.field = f
+  }
+  return root
+}
+
+function flatten(root, depth, expanded) {
+  const rows = []
+  const top = [...root.children.values()].sort(
+    (a, b) => (b.field?.occurrences || childCount(b)) - (a.field?.occurrences || childCount(a))
+  )
+  for (const node of top) {
+    const f = node.field
+    const hasChildren = node.children.size > 0
+    const n = f ? f.occurrences : childCount(node)
+    rows.push({
+      path: node.path,
+      leaf: node.leaf,
+      type: f?.type || 'object',
+      n,
+      depth,
+      hasChildren,
+      field: f || null,
+    })
+    if (hasChildren && expanded.has(node.path)) {
+      rows.push(...flatten(node, depth + 1, expanded))
+    }
+  }
+  return rows
+}
+
+function childCount(node) {
+  let n = 0
+  for (const c of node.children.values()) n += 1 + childCount(c)
+  return n
+}
+
+function Sparkline({ n, variant = 'leaf' }) {
+  if (variant === 'parent') {
+    const cap = Math.min(n, 14)
+    const bars = []
+    for (let i = 0; i < cap; i++) {
+      bars.push(
+        <span
+          key={i}
+          style={{
+            display: 'inline-block',
+            width: '3px',
+            height: '4px',
+            background: c.accent,
+            opacity: 0.55,
+            marginRight: '2px',
+            borderRadius: '1px',
+          }}
+        />
+      )
+    }
+    return (
+      <span style={{ display: 'inline-flex', alignItems: 'center', height: '14px' }}>
+        {bars}
+        {n > cap && (
+          <span style={{ fontFamily: c.mono, fontSize: '9px', color: c.faint, marginLeft: '4px' }}>
+            +{n - cap}
+          </span>
+        )}
+      </span>
+    )
+  }
   const bars = []
   const cap = Math.min(n, 14)
   const heights = [4, 6, 8, 10, 12]
