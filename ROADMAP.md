@@ -44,7 +44,7 @@ its weight against the curl-then-look-at-the-Inspector flow.
 - 405 on GET `/i/:token` (reserved for the Inspector UI)
 - Dev proxy: `/api/*` forwarded to Fastify on :3000
 
-## Candidate features (the full set)
+## Candidate features (the 14)
 
 Each entry has the rationale and an effort tag (small = days,
 medium = weeks, large = sprint+). Pick from this list when
@@ -52,11 +52,11 @@ starting work; reorder freely when pull demands.
 
 ### Parity with webhook.site (must ship eventually)
 
-1. **JS scripting in mock reply** *(small → medium)*.
-   Toggle a script that mutates the response from request
-   context. `node:vm` behind a feature flag, strict mode,
-   no `require`, no outbound `fetch`. This is webhook.site's
-   signature feature. Without it we are not a real alternative.
+1. **JS scripting in mock reply** *(small → medium)*. Toggle a
+   script that mutates the response from request context.
+   `node:vm` behind a feature flag, strict mode, no `require`,
+   no outbound `fetch`. This is webhook.site's signature
+   feature. Without it we are not a real alternative.
 2. **Browser notifications** *(small)*. Notification API +
    permission prompt on the first capture received while the
    tab is in background. `vite-plugin-pwa` or a small service
@@ -65,68 +65,59 @@ starting work; reorder freely when pull demands.
    path, header name, header value, body substring. Client-side
    up to ~1000 events. Server-side when Mongo query cost
    justifies it.
-4. **Capture endpoint with optional forward** *(medium)*.
-   `/i/<token>` that captures AND optionally POSTs to a
-   configured destination. Closer to requestbin's "forward
-   to localhost" but without an SSH agent on the user's box.
-   Pure HTTP capture in the cloud.
 
 ### Comparator wedge (differentiation)
 
-5. **Two-event diff side-by-side** *(medium)*. Pick two
+4. **Two-event diff side-by-side** *(medium)*. Pick two
    captures, see headers + body diffed visually with lines
    highlighted per byte/char change. Webhook.site has nothing
    comparable.
-6. **Schema-history sparkline** *(medium)*. Per field, sparkline
+5. **Schema-history sparkline** *(medium)*. Per field, sparkline
    of presence + type over time. "Field `metadata.refund_reason`
    appeared on 3 of the last 5 events." Big wedge, requires
    ingesting and aggregating schema snapshots.
-7. **Diff across time range** *(small)*. Time-range picker,
+6. **Diff across time range** *(small)*. Time-range picker,
    per-field "values seen" list, jump to first event where a
-   value changed. Compounds with #6.
+   value changed. Compounds with #5.
 
 ### AI / MCP wedge (moat)
 
-8. **MCP server** *(medium → large)*. stdio + HTTP transport.
+7. **MCP server** *(medium → large)*. stdio + HTTP transport.
    Auth via inbox-scoped API key by default. Tools:
    `list_events`, `get_event`, `search_events`, `diff_events`,
    `explain_event`, `create_endpoint`. Closes the
    agent-in-the-loop debugging flow in Claude Code / Cursor /
    Cline.
-9. **`explain_event`** *(small → medium)*. Provider fingerprint
+8. **`explain_event`** *(small → medium)*. Provider fingerprint
    detection (Stripe / GitHub / Linear shape match) plus a
    one-line human-readable summary. Used both via MCP and as
    a UI panel inside the Inspector.
-10. **Schema-drift callouts** *(small)*. "3 of the last 5
-    events have a new field X" surfaced as a badge on the
-    request detail panel and as an MCP resource.
-11. **Natural-language search** *(medium)*. "show me stripe
+9. **Schema-drift callouts** *(small)*. "3 of the last 5
+   events have a new field X" surfaced as a badge on the
+   request detail panel and as an MCP resource.
+10. **Natural-language search** *(medium)*. "show me stripe
     events with amount > 100" parsed into a Mongo query, with
     confidence-sourced prompts when ambiguity is high. UI bar
     + MCP tool.
 
 ### Polish + accretion
 
-12. **Pre-loaded fixture library** *(small)*. Stripe / GitHub /
+11. **Pre-loaded fixture library** *(small)*. Stripe / GitHub /
     Linear sample payloads with "send now" buttons. Reduces
     friction on the landing page demo and in the docs.
-13. **Replay-with-mutations** *(small → medium)*. Default
+12. **Replay-with-mutations** *(small → medium)*. Default
     against the inbox's own mock reply endpoint only. External
     URL replay gated by claim + 1/min rate limit + injected
     `X-Peek-Replay: 1` header + mandatory UI warning modal
     naming the risk in plain language. No code path that lets
     an anonymous inbox re-send a modified payload to the
     open internet.
-14. **Share link (read-only)** *(small)*. Public URL for a
+13. **Share link (read-only)** *(small)*. Public URL for a
     single capture, no SSE, no inbox navigation. Useful in
     PR comments, Slack threads, bug reports.
-15. **Self-host docker-compose** *(medium)*. One container
-    Monog + API, web stays on Pages. For hobbyists and
+14. **Self-host docker-compose** *(medium)*. One container
+    Mongo + API, web stays on Pages. For hobbyists and
     enterprise with data-residency requirements.
-16. **Email inbound** *(medium → large)*. `xxx@peekhook.dev`
-    parse MIME via SES inbound + Resend webhook → capture
-    as a normal inbox event. Easy to defer until a user
-    explicitly asks.
 
 ## Won't build until demand
 
@@ -139,6 +130,13 @@ starting work; reorder freely when pull demands.
   landing page demo; we don't need a public widget API.
 - **Browser extension** (capture browser-side fetch). Postman
   and Insomnia both tried; adoption was poor. Not our fight.
+- **Email inbound** (`xxx@peekhook.dev` → captured event).
+  Demand is clear once a user explicitly asks. Cheap to add
+  when the day comes.
+- **Tunnel-style capture-and-forward** (`/i/<token>` that
+  also POSTs to a configured destination without an SSH
+  agent on the user's box). Useful but adds state for a
+  feature nobody has yet asked for.
 
 ## Open questions
 
@@ -152,8 +150,6 @@ starting work; reorder freely when pull demands.
    as a service, or document `mongod` install + instructions
    for bringing your own? First is friendlier; second is
    more honest about the data layer.
-4. **Email inbound inbox**: special `email-capture` inbox
-   per email address, or route to an existing inbox?
 
 ## Update log
 
@@ -161,3 +157,10 @@ starting work; reorder freely when pull demands.
   candidate features grouped by wedge, won't-build list, open
   questions. Update this log when priorities shift or features
   land.
+- v0.2: dropped #4 capture-endpoint-with-forward (the
+  "tunnel-sniffer" idea escalated to "tunnel-as-a-service"
+  territory and we don't have demand yet) and #16 email inbound
+  (also deferred to Won't build until demand). Renumbered
+  remaining features 1-14. Polish section now balanced at
+  four items. Open question 4 retired (email-inbound shape
+  no longer in play).
