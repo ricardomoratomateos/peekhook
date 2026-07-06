@@ -4,13 +4,54 @@ import { Outcome } from '../../domain/Outcome.js'
 import { MongoInboxRepository } from '../persistence/MongoInboxRepository.js'
 import { MongoCapturedRequestRepository } from '../persistence/MongoCapturedRequestRepository.js'
 
-/** Composition root: wire CaptureRequest to its Mongo adapters. */
 function makeCaptureRequest() {
   const db = getDb()
   return new CaptureRequest({
     inboxes:  new MongoInboxRepository(db),
     requests: new MongoCapturedRequestRepository(db),
   })
+}
+
+const CAPTURE_METHODS = ['POST', 'PUT', 'PATCH', 'DELETE']
+
+async function captureHandler(request, reply) {
+  const { token } = request.params
+
+  const rawBody    = request.rawBody ?? ''
+  const size       = request.rawBodySize ?? 0
+
+  const path        = request.url.split('?')[0]
+  const query       = request.query
+  const contentType = request.headers['content-type'] ?? ''
+  const clientIp    = request.headers['x-forwarded-for']?.split(',')[0].trim()
+    || request.headers['x-real-ip']
+    || request.ip
+
+  const result = await makeCaptureRequest().execute({
+    inboxToken:  token,
+    method:      request.method,
+    path,
+    query,
+    headers:     request.headers,
+    body:        rawBody,
+    contentType,
+    size,
+    ip:          clientIp,
+  })
+
+  if (result.outcome === Outcome.INBOX_NOT_FOUND) {
+    return reply.code(404).send({ error: 'Inbox not found' })
+  }
+
+  const cfg = result.responseConfig
+  if (cfg && cfg.enabled) {
+    return reply
+      .code(cfg.status)
+      .header('content-type', cfg.contentType)
+      .send(cfg.body)
+  }
+
+  return reply.code(200).send({ ok: true, id: result.id.toString() })
 }
 
 export default async function ingestRoute(fastify) {
@@ -27,43 +68,13 @@ export default async function ingestRoute(fastify) {
   )
   fastify.addContentTypeParser('*', { parseAs: 'buffer' }, captureBody)
 
-  fastify.all('/i/:token', async (request, reply) => {
-    const { token } = request.params
+  for (const method of CAPTURE_METHODS) {
+    fastify.route({ method, url: '/i/:token', handler: captureHandler })
+  }
 
-    const rawBody    = request.rawBody ?? ''
-    const size       = request.rawBodySize ?? 0
-
-    const path        = request.url.split('?')[0]
-    const query       = request.query
-    const contentType = request.headers['content-type'] ?? ''
-    const clientIp    = request.headers['x-forwarded-for']?.split(',')[0].trim()
-      || request.headers['x-real-ip']
-      || request.ip
-
-    const result = await makeCaptureRequest().execute({
-      inboxToken:  token,
-      method:      request.method,
-      path,
-      query,
-      headers:     request.headers,
-      body:        rawBody,
-      contentType,
-      size,
-      ip:          clientIp,
+  fastify.get('/i/:token', async (request, reply) => {
+    return reply.code(405).send({
+      error: 'Inbox ingest accepts POST/PUT/PATCH/DELETE only. GET is reserved for the inspector UI.',
     })
-
-    if (result.outcome === Outcome.INBOX_NOT_FOUND) {
-      return reply.code(404).send({ error: 'Inbox not found' })
-    }
-
-    const cfg = result.responseConfig
-    if (cfg && cfg.enabled) {
-      return reply
-        .code(cfg.status)
-        .header('content-type', cfg.contentType)
-        .send(cfg.body)
-    }
-
-    return reply.code(200).send({ ok: true, id: result.id.toString() })
   })
 }

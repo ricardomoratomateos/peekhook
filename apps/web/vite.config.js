@@ -8,7 +8,6 @@ export default defineConfig({
     host: true,
     watch: { usePolling: true },
     proxy: {
-      '/i': { target: 'http://localhost:3000', changeOrigin: true },
       '/api': { target: 'http://localhost:3000', changeOrigin: true },
     },
   },

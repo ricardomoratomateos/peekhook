@@ -714,7 +714,6 @@ const d = {
   emptyTitle: { fontSize: '17px', fontWeight: 500, color: c.fg },
   emptySub: { fontSize: '13.5px', color: c.dim, lineHeight: 1.6, marginTop: '-10px' },
   curlBlock: { width: '100%', border: `1px solid ${c.border}`, borderRadius: '8px', overflow: 'hidden' },
-  curlHead: { padding: '8px 14px', background: c.low, borderBottom: `1px solid ${c.borderSoft}` },
   curlLabel: { fontFamily: c.mono, fontSize: '10px', color: c.dim, letterSpacing: '0.2em', textTransform: 'uppercase' },
   curlCode: { padding: '14px', fontSize: '12px', color: c.fg, fontFamily: c.mono, lineHeight: 1.7, background: c.lowest, overflowX: 'auto', whiteSpace: 'pre' },
   curlHead:  { padding: '8px 14px', background: c.low, borderBottom: `1px solid ${c.borderSoft}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' },
