@@ -8,16 +8,20 @@ import { GetRequest } from '../../app/GetRequest.js'
 import { ConfigureResponse } from '../../app/ConfigureResponse.js'
 import { MongoInboxRepository } from '../persistence/MongoInboxRepository.js'
 import { MongoRequestListReadModel } from '../persistence/MongoRequestListReadModel.js'
+import { MongoMcpAuthRepository } from '../../features/mcp/infra/MongoMcpAuthRepository.js'
+import { MintMcpToken } from '../../features/mcp/app/MintMcpToken.js'
 
 function makeUseCases() {
   const db = getDb()
   const readModel = new MongoRequestListReadModel(db)
   const inboxRepo = new MongoInboxRepository(db)
+  const mcpAuth   = new MongoMcpAuthRepository(db)
   return {
     createInbox:       new CreateInbox({ inboxes: inboxRepo }),
     listRequests:      new ListRequests({ requests: readModel }),
     getRequest:        new GetRequest({ requests: readModel }),
     configureResponse: new ConfigureResponse({ inboxes: inboxRepo }),
+    mintMcpToken:      new MintMcpToken({ mcpAuth }),
   }
 }
 
@@ -38,12 +42,14 @@ function toDto(doc) {
 
 export default async function apiRoute(fastify) {
   fastify.post('/api/inboxes', async (request, reply) => {
-    const { createInbox } = makeUseCases()
+    const { createInbox, mintMcpToken } = makeUseCases()
     const result = await createInbox.execute()
+    const { mcpToken } = await mintMcpToken.execute({ inboxToken: result.token })
     return reply.code(201).send({
       token:     result.token,
       url:       `${config.ingestUrl}/i/${result.token}`,
       expiresAt: result.expiresAt,
+      mcp_token: mcpToken,
     })
   })
 
