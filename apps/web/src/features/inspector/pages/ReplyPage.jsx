@@ -29,6 +29,7 @@ export default function ReplyPage({ token }) {
 
   const responseConfig = inbox?.responseConfig ?? null
   const forwardTo      = inbox?.forwardTo      ?? null
+  const ingestUrl      = inbox?.ingestUrl      ?? null
 
   async function commitInbox({ response, forwardTo: nextForward }) {
     setBusy(true)
@@ -180,6 +181,7 @@ export default function ReplyPage({ token }) {
           onRequestSave={handleRequestSaveForward}
           onRequestClear={handleRequestClearForward}
           busy={busy}
+          ingestUrl={ingestUrl}
         />
       </div>
       {modalConfig && (

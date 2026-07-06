@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react'
 import { rc } from '../styles.js'
+import { checkForwardLoop } from '../lib/loopRule.js'
 
 const PLACEHOLDER = 'http://localhost:3000/webhook'
 
-export default function ForwardConfigPanel({ token, value, onRequestSave, onRequestClear, busy }) {
+export default function ForwardConfigPanel({ token, value, onRequestSave, onRequestClear, busy, ingestUrl }) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft]     = useState(value || '')
   const [error, setError]     = useState(null)
@@ -41,6 +42,11 @@ export default function ForwardConfigPanel({ token, value, onRequestSave, onRequ
     }
     if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
       setError('only http: or https: URLs are allowed')
+      return
+    }
+    const loop = checkForwardLoop(url, ingestUrl)
+    if (!loop.ok) {
+      setError(`loop detected — ${loop.message}. pick a different destination.`)
       return
     }
     setError(null)
@@ -111,7 +117,7 @@ export default function ForwardConfigPanel({ token, value, onRequestSave, onRequ
                   }}
                 />
                 <div style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', letterSpacing: '0.04em' }}>
-                  http(s) only · 10s timeout · loop protection against this ingest origin
+                  http(s) only · 10s timeout · loop protection against {ingestUrl || 'this ingest origin'}
                 </div>
               </div>
 

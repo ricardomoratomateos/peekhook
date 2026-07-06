@@ -25,7 +25,7 @@ function makeUseCases() {
     listRequests:      new ListRequests({ requests: readModel }),
     getRequest:        new GetRequest({ requests: readModel }),
     configureResponse: new ConfigureResponse({ inboxes: inboxRepo }),
-    configureForward:  new ConfigureForward({ inboxes: inboxRepo }),
+    configureForward:  new ConfigureForward({ inboxes: inboxRepo, ingestUrl: config.ingestUrl }),
     mintMcpToken:      new MintMcpToken({ mcpAuth }),
     getSchemaHistory:  new GetSchemaHistory({ schemas: schemaRepo }),
   }
@@ -55,6 +55,7 @@ export default async function apiRoute(fastify) {
     return reply.code(201).send({
       token:        result.token,
       url:          `${config.ingestUrl}/i/${result.token}`,
+      ingestUrl:    config.ingestUrl,
       expiresAt:    result.expiresAt,
       mcp_token:    mcpToken,
       forwardTo:    null,
@@ -158,6 +159,7 @@ export default async function apiRoute(fastify) {
     return reply.send({
       token,
       url:           `${config.ingestUrl}/i/${token}`,
+      ingestUrl:     config.ingestUrl,
       expiresAt:     inbox.expiresAt,
       responseConfig: inbox.responseConfig ?? null,
       forwardTo:     inbox.forwardTo ?? null,
