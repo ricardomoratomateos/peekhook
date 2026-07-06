@@ -4,6 +4,9 @@ import { c } from '../lib/tokens.js'
 import { RESPONSE_PRESETS, RESPONSE_DEFAULTS } from '../lib/responsePresets.js'
 import { rc } from '../styles.js'
 
+const SCRIPT_MAX = 8192
+const SCRIPT_DEFAULT = `// runs in a sandboxed node:vm context\n// 'request' is available with { method, path, query, headers, body }\n// return a string to send as the response body\n\nreturn JSON.stringify({\n  echo: request.body,\n  method: request.method,\n  stamped_at: new Date().toISOString()\n});\n`
+
 export default function ResponseConfigPanel({ token }) {
   const [saved, setSaved]         = useState(null)
   const [loading, setLoading]     = useState(true)
@@ -11,6 +14,8 @@ export default function ResponseConfigPanel({ token }) {
   const [status, setStatus]       = useState(200)
   const [contentType, setCT]      = useState('application/json')
   const [body, setBody]           = useState('')
+  const [scriptEnabled, setScriptEnabled] = useState(false)
+  const [script, setScript]       = useState('')
   const [saving, setSaving]       = useState(false)
   const [error, setError]         = useState(null)
   const [open, setOpen]           = useState(false)
@@ -26,6 +31,8 @@ export default function ResponseConfigPanel({ token }) {
           setStatus(inbox.responseConfig.status)
           setCT(inbox.responseConfig.contentType)
           setBody(inbox.responseConfig.body)
+          setScriptEnabled(Boolean(inbox.responseConfig.scriptEnabled))
+          setScript(inbox.responseConfig.script || '')
         }
       })
       .catch(() => {})
@@ -37,7 +44,14 @@ export default function ResponseConfigPanel({ token }) {
     setError(null)
     setSaving(true)
     try {
-      const cfg = { enabled, status: Number(status), contentType, body }
+      const cfg = {
+        enabled,
+        status: Number(status),
+        contentType,
+        body,
+        scriptEnabled,
+        script: script.slice(0, SCRIPT_MAX),
+      }
       const updated = await api.setResponse(token, cfg)
       setSaved(updated.responseConfig)
     } catch (err) {
@@ -57,12 +71,16 @@ export default function ResponseConfigPanel({ token }) {
       setStatus(RESPONSE_DEFAULTS.status)
       setCT(RESPONSE_DEFAULTS.contentType)
       setBody(RESPONSE_DEFAULTS.body)
+      setScriptEnabled(false)
+      setScript('')
     } catch (err) {
       setError(err.message)
     } finally {
       setSaving(false)
     }
   }
+
+  const scriptOver = script.length > SCRIPT_MAX
 
   return (
     <div style={{ ...rc.wrap, padding: open ? '12px' : '5px 12px', gap: open ? '8px' : '0' }}>
@@ -113,7 +131,7 @@ export default function ResponseConfigPanel({ token }) {
                 ))}
               </select>
 
-              <label style={rc.label}>body</label>
+              <label style={rc.label}>body (static fallback)</label>
               <textarea
                 value={body}
                 onChange={e => setBody(e.target.value)}
@@ -122,8 +140,51 @@ export default function ResponseConfigPanel({ token }) {
                 style={rc.textarea}
               />
 
+              <button
+                type="button"
+                onClick={() => setScriptEnabled(s => !s)}
+                className="sb-switchrow"
+                style={{ ...rc.switchRow, marginTop: '4px' }}
+                aria-pressed={scriptEnabled}
+              >
+                <span style={rc.switchRowLabel}>use js script (override body)</span>
+                <span style={{ ...rc.switchTrack, ...(scriptEnabled ? rc.switchTrackOn : {}) }}>
+                  <span style={{ ...rc.switchThumb, ...(scriptEnabled ? rc.switchThumbOn : {}) }} />
+                </span>
+              </button>
+
+              {scriptEnabled && (
+                <>
+                  <label style={rc.label}>script · 200ms timeout · sandboxed</label>
+                  <textarea
+                    value={script}
+                    onChange={e => setScript(e.target.value.slice(0, SCRIPT_MAX + 256))}
+                    placeholder={SCRIPT_DEFAULT}
+                    spellCheck={false}
+                    style={{
+                      ...rc.textarea,
+                      minHeight: '120px',
+                      borderColor: scriptOver ? 'var(--status-red)' : c.border,
+                    }}
+                  />
+                  <div style={{
+                    fontFamily: c.mono, fontSize: '10px',
+                    color: scriptOver ? 'var(--status-red)' : c.faint,
+                    marginTop: '2px',
+                    textAlign: 'right',
+                  }}>
+                    {script.length}/{SCRIPT_MAX}
+                  </div>
+                </>
+              )}
+
               <div style={rc.btnRow}>
-                <button onClick={handleSave} disabled={saving} className="sb-accent" style={rc.btnPrimary}>
+                <button
+                  onClick={handleSave}
+                  disabled={saving || scriptOver}
+                  className="sb-accent"
+                  style={rc.btnPrimary}
+                >
                   {saving ? 'saving…' : 'save'}
                 </button>
                 <button onClick={handleClear} disabled={saving} style={rc.btnGhost}>
@@ -141,6 +202,14 @@ export default function ResponseConfigPanel({ token }) {
 }
 
 function StatusPill({ rs }) {
+  if (rs?.enabled && rs?.scriptEnabled && rs?.script) {
+    return (
+      <span style={rc.pillOn} title="scripted reply active">
+        <span style={rc.pillOnDot} />
+        script · {rs.status}
+      </span>
+    )
+  }
   if (rs?.enabled) {
     return (
       <span style={rc.pillOn} title="custom reply active">

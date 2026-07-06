@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef } from 'react'
 import { useParams, useLocation, Link } from 'react-router-dom'
 import { api } from '../../lib/api.js'
-import { resolveInboxUrl } from './lib/format.js'
+import { resolveInboxUrl, resolveMcpToken } from './lib/format.js'
 import { c, GRAIN } from './lib/tokens.js'
 import { s } from './styles.js'
 import MethodChip from './components/MethodChip.jsx'
@@ -11,12 +11,15 @@ import DetailPanel from './components/DetailPanel.jsx'
 import ResponseConfigPanel from './components/ResponseConfigPanel.jsx'
 import EmptyState from './components/EmptyState.jsx'
 import ConnectingState from './components/ConnectingState.jsx'
+import McpTokenCard from './components/McpTokenCard.jsx'
+import SchemaSparkline from './components/SchemaSparkline.jsx'
 import './animations.css'
 
 export default function InspectorView() {
   const { token } = useParams()
   const { state } = useLocation()
   const inboxUrl = resolveInboxUrl(token, state)
+  const mcpToken = resolveMcpToken(token, state)
 
   const [requests, setRequests] = useState([])
   const [selectedId, setSelectedId] = useState(null)
@@ -167,6 +170,10 @@ export default function InspectorView() {
         </button>
 
         <ResponseConfigPanel token={token} />
+
+        {mcpToken && <McpTokenCard mcpToken={mcpToken} inboxToken={token} />}
+
+        <SchemaSparkline token={token} />
 
         <div style={s.listHead}>
           <span style={s.listHeadLabel}>requests</span>

@@ -33,4 +33,6 @@ export const api = {
     request(`/api/inboxes/${token}/response`, { method: 'DELETE' }),
 
   streamUrl: (token) => `/api/inboxes/${token}/stream`,
+
+  getSchemaHistory: (token) => request(`/api/inboxes/${token}/schema-history`),
 }

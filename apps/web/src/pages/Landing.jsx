@@ -39,9 +39,19 @@ export default function SandboxEntry() {
     try {
       const inbox = await api.createInbox()
       try {
-        localStorage.setItem(`peekhook-${inbox.token}`, JSON.stringify({ url: inbox.url, expiresAt: inbox.expiresAt }))
+        localStorage.setItem(`peekhook-${inbox.token}`, JSON.stringify({
+          url: inbox.url,
+          expiresAt: inbox.expiresAt,
+          mcpToken: inbox.mcp_token,
+        }))
       } catch (_) {}
-      navigate(`/i/${inbox.token}`, { state: { url: inbox.url, expiresAt: inbox.expiresAt } })
+      navigate(`/i/${inbox.token}`, {
+        state: {
+          url: inbox.url,
+          expiresAt: inbox.expiresAt,
+          mcpToken: inbox.mcp_token,
+        }
+      })
     } catch (err) {
       setErrorMsg(err.message || 'failed to create inbox. try again.')
       setStatus('error')

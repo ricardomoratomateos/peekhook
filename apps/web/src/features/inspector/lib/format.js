@@ -52,6 +52,15 @@ export function resolveInboxUrl(token, state) {
   return apiBase ? `${apiBase}/i/${token}` : `/i/${token}`
 }
 
+export function resolveMcpToken(token, state) {
+  if (state?.mcpToken) return state.mcpToken
+  try {
+    const stored = JSON.parse(localStorage.getItem(`peekhook-${token}`) || '{}')
+    if (stored.mcpToken) return stored.mcpToken
+  } catch (_) {}
+  return null
+}
+
 export function buildTestCurl(inboxUrl) {
   return `curl -s -X POST ${inboxUrl || '<your-inbox-url>'} \\
   -H "content-type: application/json" \\
