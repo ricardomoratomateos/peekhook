@@ -8,6 +8,7 @@ import MethodChip from './components/MethodChip.jsx'
 import LiveBadge from './components/LiveBadge.jsx'
 import RequestRow from './components/RequestRow.jsx'
 import DetailPanel from './components/DetailPanel.jsx'
+import DiffPanel from './components/DiffPanel.jsx'
 import ResponseConfigPanel from './components/ResponseConfigPanel.jsx'
 import EmptyState from './components/EmptyState.jsx'
 import ConnectingState from './components/ConnectingState.jsx'
@@ -23,6 +24,8 @@ export default function InspectorView() {
 
   const [requests, setRequests] = useState([])
   const [selectedId, setSelectedId] = useState(null)
+  const [compareIds, setCompareIds] = useState([])
+  const [showDiff, setShowDiff] = useState(false)
   const [copied, setCopied] = useState(false)
   const [copiedTest, setCopiedTest] = useState(false)
   const [liveStatus, setLiveStatus] = useState('connecting')
@@ -106,7 +109,27 @@ export default function InspectorView() {
     if (selectedId == null && requests.length > 0) setSelectedId(requests[0].id)
   }, [requests, selectedId])
 
+  useEffect(() => {
+    setCompareIds(prev => prev.filter(id => requests.some(r => r.id === id)).slice(0, 2))
+  }, [requests])
+
   const selectedReq = requests.find(r => r.id === selectedId) || null
+
+  function handleToggleCompare(req) {
+    if (!req?.id) return
+    setCompareIds(prev => {
+      if (prev.includes(req.id)) {
+        return prev.filter(id => id !== req.id)
+      }
+      if (prev.length < 2) return [...prev, req.id]
+      return [prev[1], req.id]
+    })
+  }
+
+  function handleClearCompare() {
+    setCompareIds([])
+    setShowDiff(false)
+  }
 
   async function handleCopy() {
     try { await navigator.clipboard.writeText(inboxUrl) } catch (_) {}
@@ -133,6 +156,10 @@ export default function InspectorView() {
       </div>
     )
   }
+
+  const compareReady = compareIds.length === 2
+  const compareReqs = compareIds.map(id => requests.find(r => r.id === id)).filter(Boolean)
+  const [compareA, compareB] = compareReqs
 
   return (
     <div style={s.shell}>
@@ -179,6 +206,53 @@ export default function InspectorView() {
           <span style={s.listHeadLabel}>requests</span>
           {requests.length > 0 && <span style={s.listHeadCount}>{requests.length}</span>}
         </div>
+
+        {compareIds.length > 0 && (
+          <div style={compareBarStyle}>
+            <div style={compareBarTitle}>
+              compare {compareIds.length}/2
+            </div>
+            <div style={compareBarPicks}>
+              {compareIds.map((id, idx) => {
+                const r = requests.find(x => x.id === id)
+                return (
+                  <span key={id} style={comparePill}>
+                    <span style={{ ...compareDot, background: idx === 0 ? '#ef4444' : '#22c55e' }} aria-hidden />
+                    <span style={comparePillMethod}>{r ? (r.method || '?').toLowerCase() : '?'}</span>
+                    <span style={comparePillPath}>{r ? prettyPath(r.path, token) : '…'}</span>
+                    <button
+                      type="button"
+                      onClick={() => handleToggleCompare({ id })}
+                      aria-label="remove from compare"
+                      style={comparePillClose}
+                    >
+                      <span className="material-symbols-outlined" style={{ fontSize: '12px', lineHeight: 1 }}>close</span>
+                    </button>
+                  </span>
+                )
+              })}
+            </div>
+            <div style={compareBarActions}>
+              <button
+                type="button"
+                onClick={handleClearCompare}
+                style={compareGhostBtn}
+              >
+                clear
+              </button>
+              <button
+                type="button"
+                disabled={!compareReady}
+                onClick={() => setShowDiff(true)}
+                style={compareReady ? comparePrimaryBtn : compareDisabledBtn}
+                aria-label={compareReady ? 'show diff' : 'pick two requests'}
+              >
+                show diff
+              </button>
+            </div>
+          </div>
+        )}
+
         <div style={s.listRows}>
           {requests.length === 0 ? (
             <div style={s.listEmpty}>
@@ -193,7 +267,9 @@ export default function InspectorView() {
                 token={token}
                 selected={req.id === selectedId}
                 isNew={newIds.has(req.id)}
+                compareSelected={compareIds.includes(req.id)}
                 onClick={() => setSelectedId(req.id === selectedId ? null : req.id)}
+                onToggleCompare={handleToggleCompare}
               />
             ))
           )}
@@ -201,13 +277,78 @@ export default function InspectorView() {
 
       </aside>
 
-      <main style={s.content} aria-label="Request detail">
-        {requests.length === 0
-          ? (liveStatus === 'connecting' ? <ConnectingState /> : <EmptyState inboxUrl={inboxUrl} onCopy={handleCopyTestRequest} />)
-          : <DetailPanel req={selectedReq} token={token} />}
+      <main style={s.content} aria-label={showDiff ? 'Request diff' : 'Request detail'}>
+        {showDiff && compareA && compareB
+          ? <DiffPanel a={compareA} b={compareB} token={token} onBack={() => setShowDiff(false)} onClear={handleClearCompare} />
+          : requests.length === 0
+            ? (liveStatus === 'connecting' ? <ConnectingState /> : <EmptyState inboxUrl={inboxUrl} onCopy={handleCopyTestRequest} />)
+            : <DetailPanel req={selectedReq} token={token} />}
       </main>
     </div>
   )
+}
+
+const compareBarStyle = {
+  margin: '0 8px 8px', padding: '10px 10px 10px',
+  border: `1px solid ${c.border}`, borderRadius: '8px',
+  background: c.bg, flexShrink: 0,
+  display: 'flex', flexDirection: 'column', gap: '8px',
+}
+
+const compareBarTitle = {
+  fontFamily: c.mono, fontSize: '10px', color: c.faint,
+  letterSpacing: '0.16em', textTransform: 'uppercase',
+}
+
+const compareBarPicks = { display: 'flex', flexDirection: 'column', gap: '4px' }
+
+const comparePill = {
+  display: 'flex', alignItems: 'center', gap: '6px',
+  padding: '4px 6px', borderRadius: '4px',
+  background: c.lowest, border: `1px solid ${c.borderSoft}`,
+  fontFamily: c.mono, fontSize: '11px', color: c.dim,
+  minWidth: 0,
+}
+
+const compareDot = {
+  width: '6px', height: '6px', borderRadius: '50%', flexShrink: 0,
+}
+
+const comparePillMethod = {
+  color: c.faint, textTransform: 'uppercase',
+  flexShrink: 0,
+}
+
+const comparePillPath = {
+  flex: 1, overflow: 'hidden', textOverflow: 'ellipsis',
+  whiteSpace: 'nowrap', minWidth: 0,
+}
+
+const comparePillClose = {
+  display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+  background: 'transparent', border: 'none', color: c.faint,
+  cursor: 'pointer', padding: 0, flexShrink: 0,
+}
+
+const compareBarActions = { display: 'flex', gap: '6px' }
+
+const compareGhostBtn = {
+  flex: 1, background: 'transparent',
+  border: `1px solid ${c.border}`, borderRadius: '4px',
+  padding: '6px 8px', fontFamily: c.sans, fontSize: '11px',
+  color: c.dim, cursor: 'pointer',
+}
+
+const comparePrimaryBtn = {
+  flex: 1, background: c.accent, color: c.accentInk,
+  border: 'none', borderRadius: '4px',
+  padding: '6px 8px', fontFamily: c.sans, fontSize: '11px',
+  fontWeight: 500, cursor: 'pointer',
+}
+
+const compareDisabledBtn = {
+  ...comparePrimaryBtn,
+  background: c.ctr, color: c.faint, cursor: 'not-allowed',
 }
 
 function buildTestCurlFull(inboxUrl) {
