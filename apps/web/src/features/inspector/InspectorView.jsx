@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from 'react'
-import { useParams, useLocation, Link } from 'react-router-dom'
+import { useParams, useLocation, useNavigate, Link } from 'react-router-dom'
 import { api } from '../../lib/api.js'
 import { resolveInboxUrl, resolveMcpToken } from './lib/format.js'
 import { c, GRAIN } from './lib/tokens.js'
@@ -14,28 +14,19 @@ import EmptyState from './components/EmptyState.jsx'
 import ConnectingState from './components/ConnectingState.jsx'
 import McpTokenCard from './components/McpTokenCard.jsx'
 import SchemaSparkline from './components/SchemaSparkline.jsx'
-import SearchBar from './components/SearchBar.jsx'
-import NotifyPermissionBanner from './components/NotifyPermissionBanner.jsx'
 import { useBrowserNotify, useCaptureNotifications } from './lib/useBrowserNotify.js'
 import './animations.css'
 
-const TABS = [
-  { id: 'inbox',  label: 'Inbox',  icon: 'inbox'        },
-  { id: 'reply',  label: 'Reply',  icon: 'reply'        },
-  { id: 'search', label: 'Search', icon: 'search'       },
-  { id: 'schema', label: 'Schema', icon: 'data_object'  },
-  { id: 'mcp',    label: 'MCP',    icon: 'terminal'     },
-]
-
-export default function InspectorView() {
+export default function InspectorView({ tab: tabProp }) {
   const { token } = useParams()
   const { state } = useLocation()
+  const navigate = useNavigate()
+  const activeTab = tabProp || 'inbox'
   const inboxUrl = resolveInboxUrl(token, state)
   const mcpToken = resolveMcpToken(token, state)
   const notify = useBrowserNotify()
   useCaptureNotifications(notify.permission === 'granted')
 
-  const [activeTab, setActiveTab] = useState('inbox')
   const [requests, setRequests] = useState([])
   const [searchResults, setSearchResults] = useState(null)
   const [selectedId, setSelectedId] = useState(null)
@@ -192,13 +183,18 @@ export default function InspectorView() {
       <aside style={s.rail} aria-label="Inspector tabs">
         <Link to="/" className="sb-link" style={s.railLogo} aria-label="peekhook home">p</Link>
         <div style={s.railDivider} aria-hidden />
-        {TABS.map(tab => {
+        {[
+          { id: 'inbox',  path: '',        label: 'Inbox',  icon: 'inbox'        },
+          { id: 'reply',  path: '/reply',  label: 'Reply',  icon: 'reply'        },
+          { id: 'schema', path: '/schema', label: 'Schema', icon: 'data_object'  },
+          { id: 'mcp',    path: '/mcp',    label: 'MCP',    icon: 'terminal'     },
+        ].map(tab => {
           const active = activeTab === tab.id
           return (
             <button
               key={tab.id}
               type="button"
-              onClick={() => setActiveTab(tab.id)}
+              onClick={() => navigate(`/i/${token}${tab.path}`)}
               className="sb-railbtn"
               style={active ? { ...s.railBtn, ...s.railBtnActive } : s.railBtn}
               aria-label={tab.label}
@@ -223,7 +219,6 @@ export default function InspectorView() {
             copiedTest={copiedTest}
             onCopy={handleCopy}
             onCopyTest={handleCopyTestRequest}
-            notify={notify}
             token={token}
             searchResults={searchResults}
             setSearchResults={setSearchResults}
@@ -242,39 +237,6 @@ export default function InspectorView() {
         {activeTab === 'reply' && (
           <ConfigTab title="Reply" hint="mock response on capture">
             <ResponseConfigPanel token={token} />
-          </ConfigTab>
-        )}
-        {activeTab === 'search' && (
-          <ConfigTab title="Search" hint="regex or natural language">
-            <div style={{ flexShrink: 0 }}>
-              <SearchBar
-                token={token}
-                onResults={setSearchResults}
-                onClear={() => setSearchResults(null)}
-              />
-            </div>
-            <div style={s.listRows}>
-              {displayedRequests.length === 0 ? (
-                <div style={s.listEmpty}>
-                  <span style={s.listEmptyText}>
-                    {searchResults ? 'no matches' : 'type above to search captures'}
-                  </span>
-                </div>
-              ) : (
-                displayedRequests.map(req => (
-                  <RequestRow
-                    key={req.id}
-                    req={req}
-                    token={token}
-                    selected={req.id === selectedId}
-                    isNew={!searchResults && newIds.has(req.id)}
-                    compareSelected={compareIds.includes(req.id)}
-                    onClick={() => setSelectedId(req.id === selectedId ? null : req.id)}
-                    onToggleCompare={handleToggleCompare}
-                  />
-                ))
-              )}
-            </div>
           </ConfigTab>
         )}
         {activeTab === 'schema' && (
@@ -333,7 +295,6 @@ function InboxTab({
   copiedTest,
   onCopy,
   onCopyTest,
-  notify,
   token,
   searchResults,
   setSearchResults,
@@ -375,20 +336,6 @@ function InboxTab({
         </span>
         <span style={{ flex: 1 }}>{copiedTest ? 'copied' : 'copy a test request'}</span>
       </button>
-
-      <NotifyPermissionBanner
-        permission={notify.permission}
-        supported={notify.supported}
-        onEnable={notify.requestPermission}
-      />
-
-      <div style={{ flexShrink: 0 }}>
-        <SearchBar
-          token={token}
-          onResults={setSearchResults}
-          onClear={() => setSearchResults(null)}
-        />
-      </div>
 
       <div style={s.listHead}>
         <span style={s.listHeadLabel}>
