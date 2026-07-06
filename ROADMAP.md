@@ -52,7 +52,7 @@ starting work; reorder freely when pull demands.
 
 ### Parity with webhook.site (must ship eventually)
 
-1. **JS scripting in mock reply** *(small → medium)*. Toggle a
+1. **JS scripting in mock reply** *(small → medium)* ✓ backend shipped. Toggle a
    script that mutates the response from request context.
    `node:vm` behind a feature flag, strict mode, no `require`,
    no outbound `fetch`. This is webhook.site's signature
@@ -72,17 +72,17 @@ starting work; reorder freely when pull demands.
    captures, see headers + body diffed visually with lines
    highlighted per byte/char change. Webhook.site has nothing
    comparable.
-5. **Schema-history sparkline** *(medium)*. Per field, sparkline
+5. **Schema-history sparkline** *(medium)* ✓ backend shipped (data layer + GET /schema-history). Per field, sparkline
    of presence + type over time. "Field `metadata.refund_reason`
    appeared on 3 of the last 5 events." Big wedge, requires
    ingesting and aggregating schema snapshots.
-6. **Diff across time range** *(small)*. Time-range picker,
+6. **Diff across time range** *(small)* ✓ backend shipped (data layer accessible). Time-range picker,
    per-field "values seen" list, jump to first event where a
    value changed. Compounds with #5.
 
 ### AI / MCP wedge (moat)
 
-7. **MCP server** *(medium → large)*. stdio + HTTP transport.
+7. **MCP server** *(medium → large)* ✓ backend shipped (5 tools via stdio, inbox-scoped auth). stdio + HTTP transport.
    Auth via inbox-scoped API key by default. Tools:
    `list_events`, `get_event`, `search_events`, `diff_events`,
    `explain_event`, `create_endpoint`. Closes the
@@ -164,3 +164,11 @@ starting work; reorder freely when pull demands.
   remaining features 1-14. Polish section now balanced at
   four items. Open question 4 retired (email-inbound shape
   no longer in play).
+- v0.3: shipped #1 (JS scripting), #5 (schema-history data
+  layer), #6 (schema-history query surface), #7 (MCP server,
+  5 tools over stdio) via 3 parallel agents + serial merges.
+  58/58 tests green in apps/api after all 3 merges (plus 3
+  CaptureRequest regressions). Frontend UI for JS scripting
+  editor and schema sparkline still pending. Open question
+  about MCP auth answered for now: inbox-scoped token, with
+  plaintext returned only at create.
