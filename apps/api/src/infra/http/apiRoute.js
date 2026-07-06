@@ -176,4 +176,19 @@ export default async function apiRoute(fastify) {
     if (result.outcome === Outcome.NOT_FOUND) return reply.code(404).send({ error: 'Inbox not found' })
     return reply.send({ token, responseConfig: null })
   })
+
+  // Mint a fresh MCP token for an existing inbox. The plaintext is
+  // returned exactly once; the inbox stores only the new hash.
+  // Useful when the inspector was opened by URL and the original
+  // plaintext was lost (no localStorage copy available).
+  fastify.post('/api/inboxes/:token/regenerate-mcp', async (request, reply) => {
+    const { token } = request.params
+    const { mintMcpToken } = makeUseCases()
+    try {
+      const { mcpToken } = await mintMcpToken.execute({ inboxToken: token })
+      return reply.send({ token, mcp_token: mcpToken })
+    } catch (err) {
+      return reply.code(404).send({ error: 'Inbox not found' })
+    }
+  })
 }

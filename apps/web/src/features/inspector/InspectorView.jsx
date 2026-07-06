@@ -171,7 +171,7 @@ export default function InspectorView() {
 
         <ResponseConfigPanel token={token} />
 
-        {mcpToken && <McpTokenCard mcpToken={mcpToken} inboxToken={token} />}
+        <McpTokenCard mcpToken={mcpToken} inboxToken={token} />
 
         <SchemaSparkline token={token} />
 

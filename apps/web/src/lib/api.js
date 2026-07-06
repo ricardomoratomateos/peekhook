@@ -35,4 +35,7 @@ export const api = {
   streamUrl: (token) => `/api/inboxes/${token}/stream`,
 
   getSchemaHistory: (token) => request(`/api/inboxes/${token}/schema-history`),
+
+  regenerateMcpToken: (token) =>
+    request(`/api/inboxes/${token}/regenerate-mcp`, { method: 'POST', body: '{}' }),
 }

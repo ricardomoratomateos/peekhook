@@ -1,16 +1,41 @@
 import { useState } from 'react'
+import { api } from '../../../lib/api.js'
 import { c } from '../lib/tokens.js'
 
-const SCRIPT_MAX = 8192
-
-function McpTokenCard({ mcpToken, inboxToken }) {
+function McpTokenCard({ mcpToken: initialToken, inboxToken, onTokenChange }) {
+  const [token, setToken] = useState(initialToken)
   const [copied, setCopied] = useState(false)
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useState(!!initialToken)
+  const [minting, setMinting] = useState(false)
+  const [mintError, setMintError] = useState(null)
 
   async function handleCopy() {
-    try { await navigator.clipboard.writeText(mcpToken) } catch (_) {}
+    if (!token) return
+    try { await navigator.clipboard.writeText(token) } catch (_) {}
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
+  }
+
+  async function handleMint() {
+    setMintError(null)
+    setMinting(true)
+    try {
+      const result = await api.regenerateMcpToken(inboxToken)
+      const fresh = result.mcp_token
+      setToken(fresh)
+      setOpen(true)
+      try {
+        localStorage.setItem(`peekhook-${inboxToken}`, JSON.stringify({
+          ...JSON.parse(localStorage.getItem(`peekhook-${inboxToken}`) || '{}'),
+          mcpToken: fresh,
+        }))
+      } catch (_) {}
+      if (onTokenChange) onTokenChange(fresh)
+    } catch (err) {
+      setMintError(err.message || 'failed to mint mcp token')
+    } finally {
+      setMinting(false)
+    }
   }
 
   return (
@@ -24,34 +49,67 @@ function McpTokenCard({ mcpToken, inboxToken }) {
       >
         <span style={headLeft}>
           <span style={title}>MCP</span>
-          <span style={pill}>{copied ? 'copied' : 'token'}</span>
+          <span style={pill}>{token ? (copied ? 'copied' : 'token') : (minting ? 'minting…' : 'no token')}</span>
         </span>
         <span className="material-symbols-outlined" style={chev}>{open ? 'expand_less' : 'expand_more'}</span>
       </button>
 
       {open && (
         <>
-          <div style={tokenRow}>
-            <span style={tokenText} title={mcpToken}>{mcpToken}</span>
-            <button
-              type="button"
-              onClick={handleCopy}
-              className="sb-copy"
-              style={copyBtn}
-              aria-label={copied ? 'Copied' : 'Copy MCP token'}
-            >
-              <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>
-                {copied ? 'check' : 'content_copy'}
-              </span>
-            </button>
-          </div>
-          <div style={curlBlock}>
-            <div style={curlHead}>
-              <span style={curlLabel}>use from Claude Code / Cursor</span>
-            </div>
-            <pre style={curlCode}>{buildMcpSnippet(mcpToken, inboxToken)}</pre>
-          </div>
-          <p style={footer}>inbox: <span style={mono}>{inboxToken}</span></p>
+          {token ? (
+            <>
+              <div style={tokenRow}>
+                <span style={tokenText} title={token}>{token}</span>
+                <button
+                  type="button"
+                  onClick={handleCopy}
+                  className="sb-copy"
+                  style={copyBtn}
+                  aria-label={copied ? 'Copied' : 'Copy MCP token'}
+                >
+                  <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>
+                    {copied ? 'check' : 'content_copy'}
+                  </span>
+                </button>
+              </div>
+              <div style={curlBlock}>
+                <div style={curlHead}>
+                  <span style={curlLabel}>use from Claude Code / Cursor</span>
+                </div>
+                <pre style={curlCode}>{buildMcpSnippet(token, inboxToken)}</pre>
+              </div>
+              <button
+                type="button"
+                onClick={handleMint}
+                disabled={minting}
+                className="sb-mint"
+                style={{ ...mintBtn, ...(minting ? mintBtnDisabled : {}) }}
+              >
+                <span className="material-symbols-outlined" style={{ fontSize: '13px' }}>refresh</span>
+                <span>{minting ? 'minting…' : 'regenerate token'}</span>
+              </button>
+              <p style={footer}>inbox: <span style={mono}>{inboxToken}</span></p>
+              {mintError && <div style={err}>{mintError}</div>}
+            </>
+          ) : (
+            <>
+              <p style={emptyMsg}>
+                mcp tokens are only returned once at inbox creation.
+                if you opened this URL directly, the plaintext is gone.
+              </p>
+              <button
+                type="button"
+                onClick={handleMint}
+                disabled={minting}
+                className="sb-mint"
+                style={{ ...mintBtn, ...(minting ? mintBtnDisabled : {}) }}
+              >
+                <span className="material-symbols-outlined" style={{ fontSize: '13px' }}>add</span>
+                <span>{minting ? 'minting…' : 'mint a fresh token'}</span>
+              </button>
+              {mintError && <div style={err}>{mintError}</div>}
+            </>
+          )}
         </>
       )}
     </div>
@@ -121,7 +179,25 @@ const curlCode = {
   lineHeight: 1.6, background: c.lowest, overflowX: 'auto', whiteSpace: 'pre', margin: 0,
 }
 
+const mintBtn = {
+  display: 'flex', alignItems: 'center', justifyContent: 'center',
+  gap: '6px', background: 'transparent',
+  border: '1px dashed ' + c.border, borderRadius: '4px',
+  color: c.dim, padding: '6px 10px', fontFamily: c.mono, fontSize: '11px',
+  letterSpacing: '0.04em', cursor: 'pointer', transition: 'border-color 0.12s, color 0.12s',
+}
+const mintBtnDisabled = { opacity: 0.5, cursor: 'wait' }
+
+const emptyMsg = {
+  fontSize: '11px', color: c.faint, lineHeight: 1.5, fontFamily: c.sans,
+  margin: 0,
+}
+
 const footer = { fontFamily: c.mono, fontSize: '10px', color: c.faint, letterSpacing: '0.06em', margin: 0 }
 const mono = { color: c.dim }
+
+const err = {
+  fontSize: '11px', color: 'var(--status-red)', fontFamily: c.mono, marginTop: '2px',
+}
 
 export default McpTokenCard
