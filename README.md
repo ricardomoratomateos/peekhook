@@ -53,10 +53,11 @@ open http://localhost:5173/i/<token>
 
 ## Architecture
 
-Monorepo with two apps, each following the hex layout
-(domain → app → infra) borrowed from the parent webhookguard
-repo. Each domain (Ingress) was ported as a unit, then the
-SaaS baggage was stripped:
+Monorepo with two apps, each layered per use case
+(domain → app → infra). Each use case (Capture, Reply, List)
+keeps its domain aggregate, ports, and use case in
+`apps/api/src`, and the inspector UI is wired straight at
+those routes:
 
 ```
 apps/
@@ -77,7 +78,7 @@ API surface:
 | GET    | `/api/inboxes/:token/stream`           | SSE stream of new captures    |
 | POST   | `/i/:token`                            | capture endpoint              |
 
-GET on `/i/:token` returns 405. it is reserved for the
+GET on `/i/:token` returns 405. It is reserved for the
 inspector UI, not for capture.
 
 ## Design system
@@ -91,11 +92,11 @@ full token table.
 
 See [ROADMAP.md](./ROADMAP.md) for the prioritized feature
 plan, the explicit "won't build until demand" list, and the
-guard features deferred from the parent product.
+open product questions we're deferring until we have users.
 
 ## Status
 
 MVP scaffold. Inspector works end-to-end on a single Mongo.
-Not yet deployable to a public URL. domain `peekhook.dev`
+Not yet deployable to a public URL. Domain `peekhook.dev`
 and a fly.io + Cloudflare Pages target are queued but not
 provisioned.

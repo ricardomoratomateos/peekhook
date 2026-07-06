@@ -1,7 +1,8 @@
  # PeekHook. Design System
 
-Minimal monochrome canvas with a single electric-lime accent. Inspired
-by the parent repo's dashboard/sandbox language. Tweak deliberately.
+Minimal monochrome canvas with a single electric-lime accent. Tuned
+for a developer-tool product: dark surface stack, sharp 4px radii,
+no marketing fluff. Tweak deliberately.
 
 ## Color tokens
 

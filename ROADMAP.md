@@ -11,10 +11,11 @@ in years.
 Stay tiny. Stay free. Don't add auth unless users ask for it
 twice. The differentiated wedges are:
 
-1. **Comparator**: diff two captures side-by-side,
-   schema-drift over time, "find events where X changed A→B".
+1. **Comparator**: diff two captures side-by-side, schema-drift
+   over time, "find events where X changed A→B".
 2. **AI-native surfacing**: MCP server, `explain_event`,
-   provider fingerprint detection, schema-drift callouts.
+   provider fingerprint detection, schema-drift callouts,
+   natural language search.
 
 Reject the SaaS feature factory. Every new feature has to earn
 its weight against the curl-then-look-at-the-Inspector flow.
@@ -27,7 +28,9 @@ its weight against the curl-then-look-at-the-Inspector flow.
 - **Auth**: none, ever, unless pull justifies it
 - **Hosting**: API on fly.io free tier, web on Cloudflare Pages
 - **Domain**: `peekhook.dev` (Porkbun, $1.11 first year)
-- **No Slack / Discord / Teams / email notifiers in MVP**. Browser notifications + MCP reach the same audience.
+- **No Slack / Discord / Teams / email notifiers in MVP**.
+  Browser notifications + MCP reach the same audience without
+  wiring four more integrations.
 
 ## What ships today
 
@@ -41,103 +44,120 @@ its weight against the curl-then-look-at-the-Inspector flow.
 - 405 on GET `/i/:token` (reserved for the Inspector UI)
 - Dev proxy: `/api/*` forwarded to Fastify on :3000
 
-## P0: parity with webhook.site (must ship)
+## Candidate features (the full set)
 
-- **JS scripting in mock reply**. Toggle a script that mutates
-  the response based on the request. `node:vm` behind a flag,
-  strict mode, no `require`, no `fetch` outside the inbox.
-  This is the signature feature webhook.site has. Without
-  it we are not a real alternative.
-- **Browser notifications**. Notification API + permission
-  prompt on first capture received while tab is in background.
-  Cheap (vite-plugin-pwa or a small service worker), high UX
-  signal, no third-party service.
-- **Search + filter in inbox**. Regex on path, header name,
-  header value, body substring. Client-side up to 1000 events,
-  server-side when Mongo query cost justifies it.
+Each entry has the rationale and an effort tag (small = days,
+medium = weeks, large = sprint+). Pick from this list when
+starting work; reorder freely when pull demands.
 
-## P1: differentiators
+### Parity with webhook.site (must ship eventually)
 
-- **MCP server**. stdio + HTTP. Auth via inbox-scoped API key
-  by default, workspace-scoped once accounts exist. Tools:
-  `list_events`, `get_event`, `search_events`, `diff_events`,
-  `explain_event`, `create_endpoint`. Closes the
-  agent-in-the-loop debugging flow when the user is in Claude
-  Code / Cursor / Cline.
-- **Diff side-by-side**. Pick two captures, see headers +
-  body diffed visually (lines highlighted per byte/char change).
-  Webhook.site has nothing comparable.
-- **Schema-history sparkline**. Per field, sparkline of
-  presence + type over time. "Field `metadata.refund_reason`
-  appeared on 3 of the last 5 events."
-- **Replay-with-mutations**. Default against the inbox's own
-  mock reply endpoint only. External URL replay requires
-  claim + 1/min rate limit + `X-Peek-Replay: 1` injected
-  header + mandatory UI warning modal that names the risk in
-  plain language. No path that lets an anonymous inbox
-  re-send a modified payload to the open internet.
+1. **JS scripting in mock reply** *(small → medium)*.
+   Toggle a script that mutates the response from request
+   context. `node:vm` behind a feature flag, strict mode,
+   no `require`, no outbound `fetch`. This is webhook.site's
+   signature feature. Without it we are not a real alternative.
+2. **Browser notifications** *(small)*. Notification API +
+   permission prompt on the first capture received while the
+   tab is in background. `vite-plugin-pwa` or a small service
+   worker. Cheap, high UX signal.
+3. **Search + filter in inbox** *(small → medium)*. Regex on
+   path, header name, header value, body substring. Client-side
+   up to ~1000 events. Server-side when Mongo query cost
+   justifies it.
+4. **Capture endpoint with optional forward** *(medium)*.
+   `/i/<token>` that captures AND optionally POSTs to a
+   configured destination. Closer to requestbin's "forward
+   to localhost" but without an SSH agent on the user's box.
+   Pure HTTP capture in the cloud.
 
-## P2: accretion
+### Comparator wedge (differentiation)
 
-- **Pre-loaded fixture library**. Stripe / GitHub / Linear
-  sample payloads with "send now" buttons. Reduces friction
-  on the landing page demo and in the docs.
-- **Capture endpoint with optional forward**. `/i/<token>`
-  captures AND optionally POSTs to a configured destination.
-  Closer to requestbin's "forward to localhost" idea but
-  without an SSH agent on the user's box. Pure HTTP capture
-  in the cloud.
-- **Self-host docker-compose**. One container Mongo + API,
-  web stays on Pages. For hobbyists and enterprise with
-  data-residency requirements.
-- **Share link**. Read-only URL for a single capture, no SSE,
-  no inbox navigation. Useful in PR comments and chat.
+5. **Two-event diff side-by-side** *(medium)*. Pick two
+   captures, see headers + body diffed visually with lines
+   highlighted per byte/char change. Webhook.site has nothing
+   comparable.
+6. **Schema-history sparkline** *(medium)*. Per field, sparkline
+   of presence + type over time. "Field `metadata.refund_reason`
+   appeared on 3 of the last 5 events." Big wedge, requires
+   ingesting and aggregating schema snapshots.
+7. **Diff across time range** *(small)*. Time-range picker,
+   per-field "values seen" list, jump to first event where a
+   value changed. Compounds with #6.
+
+### AI / MCP wedge (moat)
+
+8. **MCP server** *(medium → large)*. stdio + HTTP transport.
+   Auth via inbox-scoped API key by default. Tools:
+   `list_events`, `get_event`, `search_events`, `diff_events`,
+   `explain_event`, `create_endpoint`. Closes the
+   agent-in-the-loop debugging flow in Claude Code / Cursor /
+   Cline.
+9. **`explain_event`** *(small → medium)*. Provider fingerprint
+   detection (Stripe / GitHub / Linear shape match) plus a
+   one-line human-readable summary. Used both via MCP and as
+   a UI panel inside the Inspector.
+10. **Schema-drift callouts** *(small)*. "3 of the last 5
+    events have a new field X" surfaced as a badge on the
+    request detail panel and as an MCP resource.
+11. **Natural-language search** *(medium)*. "show me stripe
+    events with amount > 100" parsed into a Mongo query, with
+    confidence-sourced prompts when ambiguity is high. UI bar
+    + MCP tool.
+
+### Polish + accretion
+
+12. **Pre-loaded fixture library** *(small)*. Stripe / GitHub /
+    Linear sample payloads with "send now" buttons. Reduces
+    friction on the landing page demo and in the docs.
+13. **Replay-with-mutations** *(small → medium)*. Default
+    against the inbox's own mock reply endpoint only. External
+    URL replay gated by claim + 1/min rate limit + injected
+    `X-Peek-Replay: 1` header + mandatory UI warning modal
+    naming the risk in plain language. No code path that lets
+    an anonymous inbox re-send a modified payload to the
+    open internet.
+14. **Share link (read-only)** *(small)*. Public URL for a
+    single capture, no SSE, no inbox navigation. Useful in
+    PR comments, Slack threads, bug reports.
+15. **Self-host docker-compose** *(medium)*. One container
+    Monog + API, web stays on Pages. For hobbyists and
+    enterprise with data-residency requirements.
+16. **Email inbound** *(medium → large)*. `xxx@peekhook.dev`
+    parse MIME via SES inbound + Resend webhook → capture
+    as a normal inbox event. Easy to defer until a user
+    explicitly asks.
 
 ## Won't build until demand
 
 - **Vanity URLs** (`my-shop.peekhook.dev`). Free gets the
-  token URL, paid gets the slug. Won't ship until a paying
+  token URL, paid gets a slug. Won't ship until a paying
   customer asks.
-- **Email inbound** (`xxx@peekhook.dev` → captured event).
-  Worth doing once a user explicitly asks. Easy to defer.
 - **Slack / Discord / Teams / email notifiers**. Browser
-  notifications + MCP reach the same dev audience without
-  wiring four more integrations.
+  notifications + MCP reach the same dev audience.
 - **Embed iframe**. The only embed that matters is the
   landing page demo; we don't need a public widget API.
 - **Browser extension** (capture browser-side fetch). Postman
   and Insomnia both tried; adoption was poor. Not our fight.
-
-## Deferred from the parent (webhookguard) "Guard" wedge
-
-These are working code on the parent repo and are tempting to
-carry over, but they belong to a different product pitch
-("trusted SaaS with payments, plans, workspaces, audit log").
-Move to ROADMAP-guard.md if real user pull demands:
-
-- HMAC signature verification for Stripe / GitHub / Shopify /
-  custom providers
-- Timestamp + nonce tolerance window on HMAC
-- PII redaction in body (JSONPath + regex rules)
-- Schema validation gate (drop requests whose payload fails
-  the registered JSON Schema, alert on drift)
-- Anomaly detection (rule-based thresholds, never ML)
-- Audit log export (CSV / JSON)
 
 ## Open questions
 
 1. **MCP auth**: inbox-scoped tokens (public-by-default) or
    workspace-scoped (requires account)? Or both, with the
    inbox token exposing only the inbox that minted it?
-2. **Fixtures on landing page**: does the "send a real
-   Stripe webhook now" button belong on `/` or only inside
-   the Inspector? Landing page presence drives demo quality.
+2. **Fixtures on landing page**: does the "send a real Stripe
+   webhook now" button belong on `/` or only inside the
+   Inspector? Landing-page presence drives demo quality.
 3. **Self-host shape**: ship `docker-compose.yml` with Mongo
    as a service, or document `mongod` install + instructions
-   for bringing your own? The first is friendlier, the
-   second is more honest about the data layer.
+   for bringing your own? First is friendlier; second is
+   more honest about the data layer.
 4. **Email inbound inbox**: special `email-capture` inbox
    per email address, or route to an existing inbox?
 
-Update this file when priorities shift. Mention in the
-commit message which P-level the change touches.
+## Update log
+
+- v0.1 (initial): locked-in stack, what ships today, 16
+  candidate features grouped by wedge, won't-build list, open
+  questions. Update this log when priorities shift or features
+  land.
