@@ -128,6 +128,20 @@ export default async function apiRoute(fastify) {
     return reply.send(result)
   })
 
+  // Public read-only capture by id. Returns a sanitized DTO that
+  // drops the inboxToken so a shared link doesn't leak the inbox
+  // it's associated with. Inbox token is still resolved at fetch
+  // time so the public view can render the inspector's chrome.
+  fastify.get('/api/requests/:id', async (request, reply) => {
+    const { id } = request.params
+    if (!ObjectId.isValid(id)) return reply.code(400).send({ error: 'Invalid id' })
+
+    const db = getDb()
+    const doc = await db.collection('requests').findOne({ _id: new ObjectId(id) })
+    if (!doc) return reply.code(404).send({ error: 'Request not found' })
+    return reply.send(toDto(doc))
+  })
+
   fastify.get('/api/inboxes/:token', async (request, reply) => {
     const { token } = request.params
     const db = getDb()

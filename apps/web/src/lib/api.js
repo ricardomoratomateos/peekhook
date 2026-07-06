@@ -36,6 +36,8 @@ export const api = {
 
   getSchemaHistory: (token) => request(`/api/inboxes/${token}/schema-history`),
 
+  getSharedRequest: (id) => request(`/api/requests/${id}`),
+
   regenerateMcpToken: (token) =>
     request(`/api/inboxes/${token}/regenerate-mcp`, { method: 'POST', body: '{}' }),
 

@@ -1,6 +1,14 @@
 import { useState, useEffect } from 'react'
 import { c } from '../lib/tokens.js'
 import { api } from '../../../lib/api.js'
+import { parseNaturalLanguage } from '../lib/nlParse.js'
+
+const EXAMPLES = [
+  'stripe events',
+  'events over $50',
+  'github push',
+  'error responses',
+]
 
 export default function SearchBar({ token, onResults, onClear }) {
   const [query, setQuery] = useState('')
@@ -8,21 +16,33 @@ export default function SearchBar({ token, onResults, onClear }) {
   const [status, setStatus] = useState('idle')
   const [count, setCount] = useState(null)
   const [error, setError] = useState(null)
+  const [nlResolved, setNlResolved] = useState(null)
 
   useEffect(() => {
     if (!token || !query.trim()) {
       setStatus('idle')
       setCount(null)
       setError(null)
+      setNlResolved(null)
       onClear?.()
       return
+    }
+
+    const parsed = parseNaturalLanguage(query)
+    const useField = parsed.field || field
+    const useRegex = parsed.regex || query
+
+    if (useRegex !== query || useField !== field) {
+      setNlResolved({ regex: useRegex, field: useField, provider: parsed.provider, amount: parsed.amount })
+    } else {
+      setNlResolved(null)
     }
 
     const timer = setTimeout(async () => {
       setStatus('searching')
       setError(null)
       try {
-        const result = await api.searchEvents(token, { regex: query, field })
+        const result = await api.searchEvents(token, { regex: useRegex, field: useField })
         const arr = Array.isArray(result) ? result : []
         setCount(arr.length)
         setStatus('done')
@@ -36,6 +56,10 @@ export default function SearchBar({ token, onResults, onClear }) {
 
     return () => clearTimeout(timer)
   }, [query, field, token])
+
+  function applyExample(ex) {
+    setQuery(ex)
+  }
 
   return (
     <div style={wrap}>
@@ -52,7 +76,7 @@ export default function SearchBar({ token, onResults, onClear }) {
         type="text"
         value={query}
         onChange={e => setQuery(e.target.value)}
-        placeholder="regex…"
+        placeholder="regex or natural language…"
         spellCheck={false}
         style={{
           ...input,
@@ -76,6 +100,34 @@ export default function SearchBar({ token, onResults, onClear }) {
           </button>
         ))}
       </div>
+      {nlResolved && (
+        <div style={hintRow}>
+          <span style={hintLabel}>translated to</span>
+          <code style={hintCode}>{nlResolved.regex}</code>
+          {nlResolved.field !== field && (
+            <>
+              <span style={hintLabel}>in</span>
+              <code style={hintCode}>{nlResolved.field}</code>
+            </>
+          )}
+        </div>
+      )}
+      {query === '' && (
+        <div style={examplesRow}>
+          <span style={examplesLabel}>try</span>
+          {EXAMPLES.map(ex => (
+            <button
+              key={ex}
+              type="button"
+              onClick={() => applyExample(ex)}
+              className="sb-searchexample"
+              style={exampleBtn}
+            >
+              {ex}
+            </button>
+          ))}
+        </div>
+      )}
       {error && <div style={errMsg}>{error}</div>}
     </div>
   )
@@ -139,6 +191,38 @@ const fieldBtnActive = {
   background: c.low,
   color: c.fg,
   borderColor: c.borderSoft,
+}
+
+const hintRow = {
+  display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap',
+  fontSize: '10px',
+}
+const hintLabel = {
+  fontFamily: c.mono, color: c.faint, textTransform: 'uppercase', letterSpacing: '0.1em',
+}
+const hintCode = {
+  fontFamily: c.mono, color: c.dim, background: c.low,
+  padding: '1px 4px', borderRadius: '3px', fontSize: '10px',
+}
+
+const examplesRow = {
+  display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap',
+}
+const examplesLabel = {
+  fontFamily: c.mono, fontSize: '9px', color: c.faint, textTransform: 'uppercase', letterSpacing: '0.1em',
+  marginRight: '2px',
+}
+const exampleBtn = {
+  background: 'transparent',
+  border: '1px dashed ' + c.border,
+  borderRadius: '3px',
+  color: c.dim,
+  fontFamily: c.mono,
+  fontSize: '9px',
+  padding: '2px 5px',
+  cursor: 'pointer',
+  letterSpacing: '0.04em',
+  transition: 'color 0.12s, border-color 0.12s',
 }
 
 const errMsg = {

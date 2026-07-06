@@ -83,6 +83,7 @@ export default function DetailPanel({ req, token }) {
   const [replayState, setReplayState] = useState('idle')
   const [replayed, setReplayed] = useState(null)
   const [replayError, setReplayError] = useState(null)
+  const [shareCopied, setShareCopied] = useState(false)
 
   useEffect(() => {
     if (!token) return
@@ -140,6 +141,15 @@ export default function DetailPanel({ req, token }) {
     }
   }
 
+  async function handleShare() {
+    if (!req) return
+    const base = window.location.origin
+    const url = `${base}/c/${req.id}`
+    try { await navigator.clipboard.writeText(url) } catch (_) {}
+    setShareCopied(true)
+    setTimeout(() => setShareCopied(false), 2000)
+  }
+
   return (
     <div style={d.panel}>
       <div style={d.header}>
@@ -172,6 +182,18 @@ export default function DetailPanel({ req, token }) {
               {replayState === 'loading' ? 'progress_activity' : 'replay'}
             </span>
             <span>{replayState === 'loading' ? 'replaying…' : 'replay'}</span>
+          </button>
+          <button
+            type="button"
+            onClick={handleShare}
+            className="sb-share"
+            style={shareBtn}
+            aria-label="copy share link"
+          >
+            <span className="material-symbols-outlined" style={{ fontSize: '13px' }}>
+              {shareCopied ? 'check' : 'link'}
+            </span>
+            <span>{shareCopied ? 'link copied' : 'share'}</span>
           </button>
           <span style={d.timestamp}>{new Date(req.createdAt).toISOString().replace('T', ' ').slice(0, 19)}</span>
         </div>
@@ -241,6 +263,8 @@ const replayBtn = {
   letterSpacing: '0.04em',
   transition: 'background 0.12s, border-color 0.12s, color 0.12s',
 }
+
+const shareBtn = replayBtn
 
 const replayBtnDisabled = {
   opacity: 0.55,
