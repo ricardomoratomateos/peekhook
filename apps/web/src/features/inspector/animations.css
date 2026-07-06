@@ -1,0 +1,15 @@
+@keyframes sbpulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
+@keyframes sbfade { from { opacity: 0; transform: translateX(-4px); } to { opacity: 1; transform: translateX(0); } }
+
+.sb-link { transition: color .15s; }
+.sb-link:hover { color: var(--text-strong) !important; }
+.sb-copy { transition: background .12s, color .12s; }
+.sb-copy:hover { background: var(--surface-3) !important; color: var(--text-strong) !important; }
+.sb-accent { transition: background .12s, transform .12s; }
+.sb-accent:hover { background: #d4ff1a !important; transform: translateY(-1px); }
+.sb-reqrow:not(.sb-reqrow-active):hover { background: var(--surface-2) !important; }
+.sb-reqrow:not(.sb-reqrow-active):hover .sb-reqicon { color: var(--accent) !important; }
+.sb-replybtn:not([aria-expanded="true"]):hover { background: var(--surface-2) !important; border-radius: 4px; }
+.sb-replybtn:not([aria-expanded="true"]):hover .material-symbols-outlined { color: var(--accent) !important; }
+.sb-switchrow:hover { background: var(--surface-2) !important; border-radius: 4px; }
+.sb-copytest:hover { background: var(--surface-2) !important; color: var(--text-strong) !important; border-color: var(--border-strong) !important; }
