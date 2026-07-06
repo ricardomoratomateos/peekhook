@@ -46,47 +46,20 @@ its weight against the curl-then-look-at-the-Inspector flow.
 
 ## Remaining to ship
 
-The 14 candidate features below are tracked individually with
-`✓ shipped` markers. Quick view of what's left (six items,
-four backend-only needing only UI glue and two still pure
-frontend):
+All 14 candidate features are now ✓ shipped end-to-end (or
+subsumed under #7 MCP for the implicit ones). Two net-new
+features remain as future scope:
 
-### Frontend-only (no new backend needed)
-
-- **#2 Browser notifications** *(small)* — Service Worker +
-  Notification API on the inspector. Prompt for permission on
-  the first capture received while the tab is in background.
-- **#4 Two-event diff side-by-side** *(medium)* — pick two
-  captures in the request list, render headers + body diffed
-  visually with character-level highlighting.
-- **#9 Schema-drift callouts** *(small)* — once schema-history
-  is loaded, badge on DetailPanel "3 of the last 5 events
-  have a new field `metadata.refund_reason`".
-
-### Backend shipped, only inspector surface missing
-
-- **#3 Search + filter input** *(small → medium)* — wire the
-  inspector's existing input box to the already-deployed
-  `/requests/search` endpoint. Add a debounced input + result
-  badge in the sidebar.
-- **#6 Diff across time range picker** *(small)* — point a date
-  picker at the existing schema-history endpoint; render
-  "values seen" per field within the selection.
-- **#11 Fixture-library buttons** *(small)* — add a "send
-  fixture" button row inside EmptyState that posts each of the
-  4 ship-loaded fixtures to the inbox.
-- **#12 Replay-with-mutations button** *(small → medium)* —
-  add a "replay" button on the DetailPanel that calls the
-  already-deployed `/replay` endpoint with the event id.
-
-### Mixed (new endpoint + UI)
+### New endpoints + UI needed
 
 - **#10 Natural-language search** *(medium)* — small backend
-  NL-to-regex parser over the existing search endpoint +
-  inspector input bar with NLP-style examples.
+  NL-to-regex parser (e.g. "show me stripe events over $50")
+  over the existing search endpoint + inspector input bar
+  that exposes the parser with NLP-style examples.
 - **#13 Share link (read-only)** *(small)* — new GET endpoint
   returning a single capture DTO + a frontend share button
   that copies a `peekhook.dev/c/<id>` URL with no auth.
+  Useful for PR comments, Slack threads, bug reports.
 
 ### Deferred to "won't build until demand"
 
@@ -110,18 +83,18 @@ starting work; reorder freely when pull demands.
    `node:vm` behind a feature flag, strict mode, no `require`,
    no outbound `fetch`. This is webhook.site's signature
    feature. Without it we are not a real alternative.
-2. **Browser notifications** *(small)*. Notification API +
+2. **Browser notifications** *(small)* ✓ shipped (useBrowserNotify hook + NotifyPermissionBanner sidebar component, Notification API on capture when tab is hidden, no backend, no Service Worker). Notification API +
    permission prompt on the first capture received while the
    tab is in background. `vite-plugin-pwa` or a small service
    worker. Cheap, high UX signal.
-3. **Search + filter in inbox** *(small → medium)* ✓ backend shipped (GET /requests/search with regex + field). Regex on
+3. **Search + filter in inbox** *(small → medium)* ✓ shipped (SearchBar in sidebar with debounced regex input + field selector, request list re-labels to 'search results' when active, returns to live mode on clear). Regex on
    path, header name, header value, body substring. Client-side
    up to ~1000 events. Server-side when Mongo query cost
    justifies it.
 
 ### Comparator wedge (differentiation)
 
-4. **Two-event diff side-by-side** *(medium)*. Pick two
+4. **Two-event diff side-by-side** *(medium)* ✓ shipped (multi-select checkbox on RequestRow + side-by-side A vs B render via LCS in lib/diff.js, line-level body diff + header-level diff). Pick two
    captures, see headers + body diffed visually with lines
    highlighted per byte/char change. Webhook.site has nothing
    comparable.
@@ -145,7 +118,7 @@ starting work; reorder freely when pull demands.
    detection (Stripe / GitHub / Linear shape match) plus a
    one-line human-readable summary. Used both via MCP and as
    a UI panel inside the Inspector.
-9. **Schema-drift callouts** *(small)*. "3 of the last 5
+9. **Schema-drift callouts** *(small)* ✓ shipped (chip on DetailPanel showing `+N new since capture` with tooltip listing the specific new paths; walks the request's body via the same path rules as PayloadSignature). "3 of the last 5
    events have a new field X" surfaced as a badge on the
    request detail panel and as an MCP resource.
 10. **Natural-language search** *(medium)*. "show me stripe
@@ -155,10 +128,10 @@ starting work; reorder freely when pull demands.
 
 ### Polish + accretion
 
-11. **Pre-loaded fixture library** *(small)* ✓ backend shipped (GET /api/fixtures lists 4 providers; POST /api/inboxes/.../fixtures/:id sends the fixture through the capture pipeline). Stripe / GitHub /
+11. **Pre-loaded fixture library** *(small)* ✓ shipped (EmptyState now renders one chip per fixture; click posts to the existing /api/inboxes/:token/fixtures/:id endpoint). Stripe / GitHub /
     Linear sample payloads with "send now" buttons. Reduces
     friction on the landing page demo and in the docs.
-12. **Replay-with-mutations** *(small → medium)* ✓ backend shipped (POST /replay, mockOnly-mode only, 1/min rate limit per inbox token, X-Peek-Replay header echoed in response DTO). Default
+12. **Replay-with-mutations** *(small → medium)* ✓ shipped (replay button on DetailPanel header; 3s replayed-status badge with expandable body details; rate-limit shows "rate-limited, retry in 60s"). POST /replay, mockOnly-mode only, 1/min rate limit per inbox token, X-Peek-Replay header echoed in response DTO). Default
     against the inbox's own mock reply endpoint only. External
     URL replay gated by claim + 1/min rate limit + injected
     `X-Peek-Replay: 1` header + mandatory UI warning modal
