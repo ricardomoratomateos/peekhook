@@ -1,4 +1,4 @@
-# PeekHook — Design System
+ # PeekHook. Design System
 
 Minimal monochrome canvas with a single electric-lime accent. Inspired
 by the parent repo's dashboard/sandbox language. Tweak deliberately.
@@ -42,5 +42,5 @@ Headlines: clamp(44, 7vw, 76) / line-height 0.98 / letter-spacing -2px
 
 ## Status
 
-Sandbox/Inspector screenshots not yet captured. Once shipped →
+Sandbox/Inspector screenshots not yet captured. Once shipped,
 capture via `/qa` and update this file with annotated examples.

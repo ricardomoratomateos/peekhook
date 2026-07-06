@@ -1,11 +1,11 @@
-# PeekHook — Claude Code Instructions
+ # PeekHook. Claude Code Instructions
 
 ## Scope
 Public, anonymous webhook inspector. No auth, no SaaS baggage.
 
-Per-inbox URL → capture any HTTP request → live SSE stream → inspector
-panel (method/headers/query/body/IP). Configurable mock reply (status,
-content-type, body) to simulate failures.
+Per-inbox URL, capture any HTTP request, live SSE stream into the
+inspector panel (method, headers, query, body, IP). Configurable
+mock reply (status, content-type, body) to simulate failures.
 
 ## Tech
 - Backend: Fastify + Mongo, TTL 7 days on `inboxes` and `requests`
@@ -35,6 +35,7 @@ Key routing rules:
 
 ## Repo conventions
 - ESM throughout (`type: "module"` in both apps)
-- Hex pattern: `domain/ → app/ → infra/` per use case
-- API path: `/api/inboxes/...`, ingest: `/i/:token`
-- Frontend proxy: vite forwards `/api` and `/i` to Fastify on :3000
+- Hex pattern: `domain/`, `app/`, `infra/` per use case
+- API path: `/api/inboxes/...`. Ingest: `/i/:token`
+- Frontend proxy: vite forwards `/api` to Fastify on :3000
+- Ingest endpoint accepts POST/PUT/PATCH/DELETE; GET 405

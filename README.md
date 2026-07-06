@@ -1,52 +1,101 @@
 # PeekHook
 
-A free, anonymous webhook inspector.
+A free, anonymous webhook inspector. No signup, expires in 7 days.
 
-Generate a unique URL, send any HTTP request to it, inspect the
-request in real time — method, headers, query params, body, IP.
-Configure a custom mock reply (status, content-type, body) to
-simulate downstream failures and test retry logic.
+Send any HTTP request to `peekhook.dev/i/<token>`. The request
+turns up live in the inspector UI: method, headers, query, body,
+IP, content-type, size. Configure a custom mock reply (status,
+content-type, body) to simulate downstream failures and test
+your retry logic.
 
 ## Quick start
 
 ```bash
+# requires Node 20+, MongoDB 7+
 npm install
 npm run dev
 ```
 
-Frontend: http://localhost:5173
-Backend: http://localhost:3000
+- Frontend: http://localhost:5173
+- Backend:  http://localhost:3000
 
-Requires a local MongoDB:
+If MongoDB is not running locally:
 
 ```bash
 brew install mongodb-community && brew services start mongodb-community
 ```
 
-(or set `MONGODB_URI` to any reachable Mongo URL).
+or set `MONGODB_URI` to any reachable Mongo URL.
+
+## What you can do today
+
+- Capture any non-GET HTTP method (POST/PUT/PATCH/DELETE) at `/i/:token`
+- Live SSE stream of new captures in the browser
+- Inspect method, headers, query params, body, IP, content-type, size
+- Configure a static mock reply (status + content-type + body)
+- Auto-expire after 7 days (TTL on the inbox)
+
+## Try it
+
+```bash
+# 1. mint an inbox
+curl -X POST http://localhost:3000/api/inboxes -d '{}'
+# → { token: "...", url: "http://localhost:3000/i/...", expiresAt: "..." }
+
+# 2. send a webhook
+curl -X POST http://localhost:3000/i/<token> \
+  -H 'content-type: application/json' \
+  -d '{"event":"hello","amount":42}'
+
+# 3. open the inspector
+open http://localhost:5173/i/<token>
+```
 
 ## Architecture
 
+Monorepo with two apps, each following the hex layout
+(domain → app → infra) borrowed from the parent webhookguard
+repo. Each domain (Ingress) was ported as a unit, then the
+SaaS baggage was stripped:
+
 ```
 apps/
-  api/   Fastify ingest at /i/:token + read API at /api/inboxes/...
-  web/   Vite + React inspector UI
+  api/   Fastify + MongoDB, captures at /i/:token, reads at /api/inboxes/...
+  web/   Vite + React 18, no SSR, Inspector UI
 ```
 
-Hex layout per app:
+API surface:
 
-```
-src/
-  domain/        pure aggregates + ports (no infra deps)
-  app/           use cases
-  infra/
-    http/        Fastify routes
-    persistence/ Mongo adapters
-  shared/        cross-cutting (db connection)
-```
+| Method | Route                                  | Purpose                       |
+| ------ | -------------------------------------- | ----------------------------- |
+| POST   | `/api/inboxes`                         | mint an inbox, returns token  |
+| GET    | `/api/inboxes/:token`                  | inbox metadata                |
+| GET    | `/api/inboxes/:token/requests`         | paginated list of captures    |
+| GET    | `/api/inboxes/:token/requests/:id`     | single capture by id          |
+| PUT    | `/api/inboxes/:token/response`         | configure mock reply          |
+| DELETE | `/api/inboxes/:token/response`         | clear mock reply              |
+| GET    | `/api/inboxes/:token/stream`           | SSE stream of new captures    |
+| POST   | `/i/:token`                            | capture endpoint              |
+
+GET on `/i/:token` returns 405. it is reserved for the
+inspector UI, not for capture.
+
+## Design system
+
+Monochrome canvas (`#0a0a0a` background, dark surface stack)
+with a single electric-lime accent (`#c8ff00`). Geist Sans for
+UI, Geist Mono for data. See [DESIGN.md](./DESIGN.md) for the
+full token table.
+
+## Roadmap
+
+See [ROADMAP.md](./ROADMAP.md) for the prioritized feature
+plan, the explicit "won't build until demand" list, and the
+guard features deferred from the parent product.
 
 ## Status
 
-MVP scaffold. Inspector works end-to-end. Inboxes TTL 7 days.
-Domains still todos: JS scripting for mock reply, browser
-notifications, MCP server, diff side-by-side.
+MVP scaffold. Inspector works end-to-end on a single Mongo.
+Not yet deployable to a public URL. domain `peekhook.dev`
+and a fly.io + Cloudflare Pages target are queued but not
+provisioned.
