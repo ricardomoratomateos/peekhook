@@ -19,6 +19,14 @@ import NotifyPermissionBanner from './components/NotifyPermissionBanner.jsx'
 import { useBrowserNotify, useCaptureNotifications } from './lib/useBrowserNotify.js'
 import './animations.css'
 
+const TABS = [
+  { id: 'inbox',  label: 'Inbox',  icon: 'inbox'        },
+  { id: 'reply',  label: 'Reply',  icon: 'reply'        },
+  { id: 'search', label: 'Search', icon: 'search'       },
+  { id: 'schema', label: 'Schema', icon: 'data_object'  },
+  { id: 'mcp',    label: 'MCP',    icon: 'terminal'     },
+]
+
 export default function InspectorView() {
   const { token } = useParams()
   const { state } = useLocation()
@@ -27,6 +35,7 @@ export default function InspectorView() {
   const notify = useBrowserNotify()
   useCaptureNotifications(notify.permission === 'granted')
 
+  const [activeTab, setActiveTab] = useState('inbox')
   const [requests, setRequests] = useState([])
   const [searchResults, setSearchResults] = useState(null)
   const [selectedId, setSelectedId] = useState(null)
@@ -180,134 +189,118 @@ export default function InspectorView() {
     <div style={s.shell}>
       <div style={{ ...s.grain, backgroundImage: `url("${GRAIN}")` }} aria-hidden />
 
-      <aside style={s.sidebar} aria-label="Sandbox inbox">
-        <div style={s.logo}>
-          <Link to="/" className="sb-link" style={s.logoText}>peekhook</Link>
-        </div>
-
-        <div style={s.ctxRow}>
-          <span className="material-symbols-outlined" style={s.ctxIcon}>science</span>
-          <span style={s.ctxName}>inbox</span>
-          <LiveBadge status={liveStatus} />
-        </div>
-
-        <div style={s.urlCard}>
-          <span style={s.urlText} title={inboxUrl}>{inboxUrl}</span>
-          <button onClick={handleCopy} className="sb-copy" style={s.copyBtn} aria-label={copied ? 'Copied' : 'Copy inbox URL'}>
-            <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>{copied ? 'check' : 'content_copy'}</span>
-          </button>
-        </div>
-
-        <button
-          type="button"
-          onClick={handleCopyTestRequest}
-          className="sb-copytest"
-          style={s.copyTestBtn}
-          aria-label={copiedTest ? 'Copied test request' : 'Copy a test request'}
-        >
-          <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>
-            {copiedTest ? 'check' : 'terminal'}
-          </span>
-          <span style={{ flex: 1 }}>{copiedTest ? 'copied' : 'copy a test request'}</span>
-        </button>
-
-        <ResponseConfigPanel token={token} />
-
-        <NotifyPermissionBanner
-          permission={notify.permission}
-          supported={notify.supported}
-          onEnable={notify.requestPermission}
-        />
-
-        <SearchBar
-          token={token}
-          onResults={setSearchResults}
-          onClear={() => setSearchResults(null)}
-        />
-
-        <McpTokenCard mcpToken={mcpToken} inboxToken={token} />
-
-        <SchemaSparkline token={token} />
-
-        <div style={s.listHead}>
-          <span style={s.listHeadLabel}>
-            {searchResults ? 'search results' : 'requests'}
-          </span>
-          {displayedRequests.length > 0 && (
-            <span style={s.listHeadCount}>{displayedRequests.length}</span>
-          )}
-        </div>
-
-        {compareIds.length > 0 && (
-          <div style={compareBarStyle}>
-            <div style={compareBarTitle}>
-              compare {compareIds.length}/2
-            </div>
-            <div style={compareBarPicks}>
-              {compareIds.map((id, idx) => {
-                const r = requests.find(x => x.id === id)
-                return (
-                  <span key={id} style={comparePill}>
-                    <span style={{ ...compareDot, background: idx === 0 ? '#ef4444' : '#22c55e' }} aria-hidden />
-                    <span style={comparePillMethod}>{r ? (r.method || '?').toLowerCase() : '?'}</span>
-                    <span style={comparePillPath}>{r ? prettyPath(r.path, token) : '…'}</span>
-                    <button
-                      type="button"
-                      onClick={() => handleToggleCompare({ id })}
-                      aria-label="remove from compare"
-                      style={comparePillClose}
-                    >
-                      <span className="material-symbols-outlined" style={{ fontSize: '12px', lineHeight: 1 }}>close</span>
-                    </button>
-                  </span>
-                )
-              })}
-            </div>
-            <div style={compareBarActions}>
-              <button
-                type="button"
-                onClick={handleClearCompare}
-                style={compareGhostBtn}
-              >
-                clear
-              </button>
-              <button
-                type="button"
-                disabled={!compareReady}
-                onClick={() => setShowDiff(true)}
-                style={compareReady ? comparePrimaryBtn : compareDisabledBtn}
-                aria-label={compareReady ? 'show diff' : 'pick two requests'}
-              >
-                show diff
-              </button>
-            </div>
-          </div>
-        )}
-
-        <div style={s.listRows}>
-          {displayedRequests.length === 0 ? (
-            <div style={s.listEmpty}>
-              <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: c.accent, animation: 'sbpulse 2s ease infinite' }} />
-              <span style={s.listEmptyText}>
-                {searchResults ? 'no matches' : 'waiting for first request…'}
+      <aside style={s.rail} aria-label="Inspector tabs">
+        <Link to="/" className="sb-link" style={s.railLogo} aria-label="peekhook home">p</Link>
+        <div style={s.railDivider} aria-hidden />
+        {TABS.map(tab => {
+          const active = activeTab === tab.id
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setActiveTab(tab.id)}
+              className="sb-railbtn"
+              style={active ? { ...s.railBtn, ...s.railBtnActive } : s.railBtn}
+              aria-label={tab.label}
+              aria-pressed={active}
+              title={tab.label}
+            >
+              <span className="material-symbols-outlined" style={{ fontSize: '18px', lineHeight: 1 }}>
+                {tab.icon}
               </span>
-            </div>
-          ) : (
-            displayedRequests.map(req => (
-              <RequestRow
-                key={req.id}
-                req={req}
-                token={token}
-                selected={req.id === selectedId}
-                isNew={!searchResults && newIds.has(req.id)}
-                compareSelected={compareIds.includes(req.id)}
-                onClick={() => setSelectedId(req.id === selectedId ? null : req.id)}
-                onToggleCompare={handleToggleCompare}
-              />
-            ))
-          )}
-        </div>
+              {active && <span style={s.railBtnDot} aria-hidden />}
+            </button>
+          )
+        })}
+      </aside>
 
+      <aside style={s.sidebar} aria-label="Sandbox inbox">
+        {activeTab === 'inbox' && (
+          <InboxTab
+            inboxUrl={inboxUrl}
+            liveStatus={liveStatus}
+            copied={copied}
+            copiedTest={copiedTest}
+            onCopy={handleCopy}
+            onCopyTest={handleCopyTestRequest}
+            notify={notify}
+            token={token}
+            searchResults={searchResults}
+            setSearchResults={setSearchResults}
+            requests={requests}
+            displayedRequests={displayedRequests}
+            selectedId={selectedId}
+            setSelectedId={setSelectedId}
+            compareIds={compareIds}
+            compareReady={compareReady}
+            newIds={newIds}
+            handleToggleCompare={handleToggleCompare}
+            handleClearCompare={handleClearCompare}
+            setShowDiff={setShowDiff}
+          />
+        )}
+        {activeTab === 'reply' && (
+          <ConfigTab title="Reply" hint="mock response on capture">
+            <ResponseConfigPanel token={token} />
+          </ConfigTab>
+        )}
+        {activeTab === 'search' && (
+          <ConfigTab title="Search" hint="regex or natural language">
+            <div style={{ flexShrink: 0 }}>
+              <SearchBar
+                token={token}
+                onResults={setSearchResults}
+                onClear={() => setSearchResults(null)}
+              />
+            </div>
+            <div style={s.listRows}>
+              {displayedRequests.length === 0 ? (
+                <div style={s.listEmpty}>
+                  <span style={s.listEmptyText}>
+                    {searchResults ? 'no matches' : 'type above to search captures'}
+                  </span>
+                </div>
+              ) : (
+                displayedRequests.map(req => (
+                  <RequestRow
+                    key={req.id}
+                    req={req}
+                    token={token}
+                    selected={req.id === selectedId}
+                    isNew={!searchResults && newIds.has(req.id)}
+                    compareSelected={compareIds.includes(req.id)}
+                    onClick={() => setSelectedId(req.id === selectedId ? null : req.id)}
+                    onToggleCompare={handleToggleCompare}
+                  />
+                ))
+              )}
+            </div>
+          </ConfigTab>
+        )}
+        {activeTab === 'schema' && (
+          <ConfigTab title="Schema" hint="field shape across captures">
+            <SchemaSparkline token={token} />
+          </ConfigTab>
+        )}
+        {activeTab === 'mcp' && (
+          <ConfigTab title="MCP" hint="give an agent inbox access">
+            <div style={{ flexShrink: 0 }}>
+              <button
+                type="button"
+                onClick={handleCopyTestRequest}
+                className="sb-copytest"
+                style={s.copyTestBtn}
+                aria-label={copiedTest ? 'Copied test request' : 'Copy a test request'}
+              >
+                <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>
+                  {copiedTest ? 'check' : 'terminal'}
+                </span>
+                <span style={{ flex: 1 }}>{copiedTest ? 'copied' : 'copy a test request'}</span>
+              </button>
+            </div>
+            <McpTokenCard mcpToken={mcpToken} inboxToken={token} />
+          </ConfigTab>
+        )}
       </aside>
 
       <main style={s.content} aria-label={showDiff ? 'Request diff' : 'Request detail'}>
@@ -319,6 +312,171 @@ export default function InspectorView() {
       </main>
     </div>
   )
+}
+
+function ConfigTab({ title, hint, children }) {
+  return (
+    <>
+      <div style={s.sidebarTabMeta}>
+        <span style={s.sidebarTabTitle}>{title}</span>
+        <span style={s.sidebarTabHint}>{hint}</span>
+      </div>
+      <div style={s.sidebarScroll}>{children}</div>
+    </>
+  )
+}
+
+function InboxTab({
+  inboxUrl,
+  liveStatus,
+  copied,
+  copiedTest,
+  onCopy,
+  onCopyTest,
+  notify,
+  token,
+  searchResults,
+  setSearchResults,
+  requests,
+  displayedRequests,
+  selectedId,
+  setSelectedId,
+  compareIds,
+  compareReady,
+  newIds,
+  handleToggleCompare,
+  handleClearCompare,
+  setShowDiff,
+}) {
+  return (
+    <>
+      <div style={s.ctxRow}>
+        <span className="material-symbols-outlined" style={s.ctxIcon}>inbox</span>
+        <span style={s.ctxName}>inbox</span>
+        <LiveBadge status={liveStatus} />
+      </div>
+
+      <div style={s.urlCard}>
+        <span style={s.urlText} title={inboxUrl}>{inboxUrl}</span>
+        <button onClick={onCopy} className="sb-copy" style={s.copyBtn} aria-label={copied ? 'Copied' : 'Copy inbox URL'}>
+          <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>{copied ? 'check' : 'content_copy'}</span>
+        </button>
+      </div>
+
+      <button
+        type="button"
+        onClick={onCopyTest}
+        className="sb-copytest"
+        style={s.copyTestBtn}
+        aria-label={copiedTest ? 'Copied test request' : 'Copy a test request'}
+      >
+        <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>
+          {copiedTest ? 'check' : 'terminal'}
+        </span>
+        <span style={{ flex: 1 }}>{copiedTest ? 'copied' : 'copy a test request'}</span>
+      </button>
+
+      <NotifyPermissionBanner
+        permission={notify.permission}
+        supported={notify.supported}
+        onEnable={notify.requestPermission}
+      />
+
+      <div style={{ flexShrink: 0 }}>
+        <SearchBar
+          token={token}
+          onResults={setSearchResults}
+          onClear={() => setSearchResults(null)}
+        />
+      </div>
+
+      <div style={s.listHead}>
+        <span style={s.listHeadLabel}>
+          {searchResults ? 'search results' : 'requests'}
+        </span>
+        {displayedRequests.length > 0 && (
+          <span style={s.listHeadCount}>{displayedRequests.length}</span>
+        )}
+      </div>
+
+      {compareIds.length > 0 && (
+        <div style={compareBarStyle}>
+          <div style={compareBarTitle}>
+            compare {compareIds.length}/2
+          </div>
+          <div style={compareBarPicks}>
+            {compareIds.map((id, idx) => {
+              const r = requests.find(x => x.id === id)
+              return (
+                <span key={id} style={comparePill}>
+                  <span style={{ ...compareDot, background: idx === 0 ? '#ef4444' : '#22c55e' }} aria-hidden />
+                  <span style={comparePillMethod}>{r ? (r.method || '?').toLowerCase() : '?'}</span>
+                  <span style={comparePillPath}>{r ? prettyPath(r.path, token) : '…'}</span>
+                  <button
+                    type="button"
+                    onClick={() => handleToggleCompare({ id })}
+                    aria-label="remove from compare"
+                    style={comparePillClose}
+                  >
+                    <span className="material-symbols-outlined" style={{ fontSize: '12px', lineHeight: 1 }}>close</span>
+                  </button>
+                </span>
+              )
+            })}
+          </div>
+          <div style={compareBarActions}>
+            <button
+              type="button"
+              onClick={handleClearCompare}
+              style={compareGhostBtn}
+            >
+              clear
+            </button>
+            <button
+              type="button"
+              disabled={!compareReady}
+              onClick={() => setShowDiff(true)}
+              style={compareReady ? comparePrimaryBtn : compareDisabledBtn}
+              aria-label={compareReady ? 'show diff' : 'pick two requests'}
+            >
+              show diff
+            </button>
+          </div>
+        </div>
+      )}
+
+      <div style={s.listRows}>
+        {displayedRequests.length === 0 ? (
+          <div style={s.listEmpty}>
+            <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: c.accent, animation: 'sbpulse 2s ease infinite' }} />
+            <span style={s.listEmptyText}>
+              {searchResults ? 'no matches' : 'waiting for first request…'}
+            </span>
+          </div>
+        ) : (
+          displayedRequests.map(req => (
+            <RequestRow
+              key={req.id}
+              req={req}
+              token={token}
+              selected={req.id === selectedId}
+              isNew={!searchResults && newIds.has(req.id)}
+              compareSelected={compareIds.includes(req.id)}
+              onClick={() => setSelectedId(req.id === selectedId ? null : req.id)}
+              onToggleCompare={handleToggleCompare}
+            />
+          ))
+        )}
+      </div>
+    </>
+  )
+}
+
+function prettyPath(path, token) {
+  if (!path) return '/'
+  const t = '/' + token
+  if (path.startsWith(t)) return path.slice(t.length) || '/'
+  return path
 }
 
 const compareBarStyle = {
