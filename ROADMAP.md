@@ -61,7 +61,7 @@ starting work; reorder freely when pull demands.
    permission prompt on the first capture received while the
    tab is in background. `vite-plugin-pwa` or a small service
    worker. Cheap, high UX signal.
-3. **Search + filter in inbox** *(small → medium)*. Regex on
+3. **Search + filter in inbox** *(small → medium)* ✓ backend shipped (GET /requests/search with regex + field). Regex on
    path, header name, header value, body substring. Client-side
    up to ~1000 events. Server-side when Mongo query cost
    justifies it.
@@ -102,10 +102,10 @@ starting work; reorder freely when pull demands.
 
 ### Polish + accretion
 
-11. **Pre-loaded fixture library** *(small)*. Stripe / GitHub /
+11. **Pre-loaded fixture library** *(small)* ✓ backend shipped (GET /api/fixtures lists 4 providers; POST /api/inboxes/.../fixtures/:id sends the fixture through the capture pipeline). Stripe / GitHub /
     Linear sample payloads with "send now" buttons. Reduces
     friction on the landing page demo and in the docs.
-12. **Replay-with-mutations** *(small → medium)*. Default
+12. **Replay-with-mutations** *(small → medium)* ✓ backend shipped (POST /replay, mockOnly-mode only, 1/min rate limit per inbox token, X-Peek-Replay header echoed in response DTO). Default
     against the inbox's own mock reply endpoint only. External
     URL replay gated by claim + 1/min rate limit + injected
     `X-Peek-Replay: 1` header + mandatory UI warning modal
@@ -133,6 +133,13 @@ starting work; reorder freely when pull demands.
 - **Email inbound** (`xxx@peekhook.dev` → captured event).
   Demand is clear once a user explicitly asks. Cheap to add
   when the day comes.
+- v0.5: shipped #3 server-side regex search,
+  #11 fixture library (4 providers + send endpoint), #12
+  mock-replay-with-rate-limit. All three landed clean in
+  isolation because each agent owned its own features/<x>/
+  folder. Orchestrator wiring lives in apps/api/src/index.js.
+  Smoke count: docker stack + 3 new endpoints + limit-rate +
+  schema-history validation. 136 / 136 tests in apps/api.
 - v0.4: shipped #14 self-host docker-compose (one-command
   bring-up of mongo + api + web with healthchecks and SPA-aware
   nginx; verified end-to-end with a scripted POST round-trip
