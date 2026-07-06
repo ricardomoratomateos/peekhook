@@ -43,13 +43,18 @@ export function prettyPath(path, token) {
 }
 
 export function resolveInboxUrl(token, state) {
-  if (state?.url) return state.url
+  const origin = typeof window !== 'undefined' && window.location?.origin ? window.location.origin : ''
+  const apiBase = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
+  let storedUrl
+  try { storedUrl = JSON.parse(localStorage.getItem(`peekhook-${token}`) || '{}')?.url } catch (_) {}
+  const raw = state?.url
+    || storedUrl
+    || `${apiBase || origin}/i/${token}`
   try {
-    const stored = JSON.parse(localStorage.getItem(`peekhook-${token}`) || '{}')
-    if (stored.url) return stored.url
-  } catch (_) {}
-  const apiBase = import.meta.env.VITE_API_URL || ''
-  return apiBase ? `${apiBase}/i/${token}` : `/i/${token}`
+    return new URL(raw, origin || undefined).toString()
+  } catch (_) {
+    return `${origin}/i/${token}`
+  }
 }
 
 export function resolveMcpToken(token, state) {
