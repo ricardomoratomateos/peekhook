@@ -7,6 +7,7 @@ import apiRoute from './inbox/infra/http/apiRoute.js'
 import { registerSearchRoutes } from './search/search.http.js'
 import registerFixtureRoutes from './fixtures/infra/fixtures.http.js'
 import { registerReplayRoutes } from './replay/infra/replay.http.js'
+import { registerMcpRoutes } from './mcp/infra/mcp.http.js'
 
 const fastify = Fastify({
   logger: { level: config.isProd ? 'warn' : 'info' },
@@ -28,6 +29,7 @@ await fastify.register(apiRoute)
 await fastify.register(registerSearchRoutes)
 await fastify.register(registerFixtureRoutes)
 await fastify.register(registerReplayRoutes)
+await fastify.register(registerMcpRoutes)
 
 fastify.get('/health', async () => ({ ok: true }))
 

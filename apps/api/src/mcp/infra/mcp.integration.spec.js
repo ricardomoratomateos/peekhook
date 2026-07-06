@@ -1,60 +1,52 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest'
-import { Readable, Writable } from 'node:stream'
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest'
+import Fastify from 'fastify'
 import { startMongo, getTestDb, stopMongo } from '../../../test/helpers/mongoMemory.js'
 import { MongoInboxRepository } from '../../inbox/infra/persistence/MongoInboxRepository.js'
 import { MongoCapturedRequestRepository } from '../../inbox/infra/persistence/MongoCapturedRequestRepository.js'
-import { MongoRequestListReadModel } from '../../inbox/infra/persistence/MongoRequestListReadModel.js'
-import { CapturedRequest } from '../../inbox/domain/CapturedRequest.js'
 import { SandboxInbox } from '../../inbox/domain/SandboxInbox.js'
+import { CapturedRequest } from '../../inbox/domain/CapturedRequest.js'
 import { MongoMcpAuthRepository } from '../infra/MongoMcpAuthRepository.js'
-import { MongoRequestSearchReadModel } from '../infra/MongoRequestSearchReadModel.js'
 import { MintMcpToken } from '../app/MintMcpToken.js'
-import { provideTools } from '../infra/provideTools.js'
-import { stdioTransport } from '../infra/stdioTransport.js'
+import { registerMcpRoutes } from '../infra/mcp.http.js'
 
-async function waitForWrites(writes, n, timeoutMs = 5000) {
-  const start = Date.now()
-  while (Date.now() - start < timeoutMs) {
-    const lines = writes.join('').split('\n').filter(Boolean)
-    if (lines.length >= n) return lines
-    await new Promise((r) => setTimeout(r, 10))
-  }
-  const lines = writes.join('').split('\n').filter(Boolean)
-  throw new Error(`timeout: only ${lines.length} of ${n} lines written (got: ${JSON.stringify(writes)})`)
-}
+const mockDb = vi.hoisted(() => ({ db: null }))
 
-describe('mcp integration (Fastify + Mongo + stdio transport)', () => {
-  let inbox
+vi.mock('../../shared/db.js', () => ({
+  connectDb: async () => {},
+  getDb:     () => mockDb.db,
+  closeDb:   async () => {},
+}))
+
+describe('mcp HTTP transport (Fastify inject + memory Mongo)', () => {
+  let server
+  let inboxToken
   let mcpToken
-  let capturedIds
 
   beforeAll(async () => {
     const db = await startMongo()
-    const inboxes = new MongoInboxRepository(db)
-    const requests = new MongoCapturedRequestRepository(db)
-    const mcpAuth  = new MongoMcpAuthRepository(db)
+    mockDb.db = db
 
-    inbox = SandboxInbox.create()
-    await inboxes.insert(inbox)
+    const inbox = SandboxInbox.create()
+    await new MongoInboxRepository(db).insert(inbox)
+    inboxToken = inbox.token
 
-    const mint = new MintMcpToken({ mcpAuth })
-    const r = await mint.execute({ inboxToken: inbox.token })
-    mcpToken = r.mcpToken
+    const { mcpToken: minted } = await new MintMcpToken({ mcpAuth: new MongoMcpAuthRepository(db) })
+      .execute({ inboxToken })
+    mcpToken = minted
 
     const now = new Date()
     const expiresAt = new Date(now.getTime() + 86_400_000)
-    const headersStripe = { 'content-type': 'application/json' }
-    const headersGithub = { 'content-type': 'application/json', 'x-github-event': 'push' }
+    const requests = new MongoCapturedRequestRepository(db)
 
     const id1 = requests.nextId()
     const id2 = requests.nextId()
     await requests.insert(CapturedRequest.create({
       id: id1,
-      inboxToken: inbox.token,
+      inboxToken,
       method: 'POST',
-      path: '/i/' + inbox.token,
+      path: '/i/' + inboxToken,
       query: {},
-      headers: headersStripe,
+      headers: { 'content-type': 'application/json' },
       body: '{"id":"evt_1","object":"event","data":{"object":{"amount":100}}}',
       contentType: 'application/json',
       size: 13,
@@ -64,11 +56,11 @@ describe('mcp integration (Fastify + Mongo + stdio transport)', () => {
     }))
     await requests.insert(CapturedRequest.create({
       id: id2,
-      inboxToken: inbox.token,
+      inboxToken,
       method: 'POST',
-      path: '/i/' + inbox.token,
+      path: '/i/' + inboxToken,
       query: {},
-      headers: headersGithub,
+      headers: { 'content-type': 'application/json', 'x-github-event': 'push' },
       body: '{"ref":"main"}',
       contentType: 'application/json',
       size: 13,
@@ -76,117 +68,163 @@ describe('mcp integration (Fastify + Mongo + stdio transport)', () => {
       now,
       expiresAt,
     }))
-    capturedIds = [id1.toString(), id2.toString()]
+
+    server = Fastify({ logger: false })
+    await server.register(registerMcpRoutes)
+    await server.ready()
+
+    return { id1: id1.toString(), id2: id2.toString() }
   })
 
-  afterAll(async () => { await stopMongo() })
+  afterAll(async () => {
+    if (server) await server.close()
+    await stopMongo()
+  })
 
-  it('exchanges JSON-RPC over a stdio pair end-to-end', async () => {
-    const db = getTestDb()
-    const mcpAuth    = new MongoMcpAuthRepository(db)
-    const readModel  = new MongoRequestListReadModel(db)
-    const searchModel = new MongoRequestSearchReadModel(db)
-    const surface = provideTools({ mcpAuth, readModel, searchModel })
-
-    const writes = []
-    const stdout = new Writable({ write(chunk, _enc, cb) { writes.push(chunk.toString()); cb() } })
-    const stdin = Readable.from([
-      JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} }) + '\n',
-      JSON.stringify({
-        jsonrpc: '2.0',
-        id: 2,
-        method: 'tools/call',
-        params: { name: 'list_events', arguments: { inbox_token: inbox.token, mcp_token: mcpToken, limit: 5 } },
-      }) + '\n',
-      JSON.stringify({
-        jsonrpc: '2.0',
-        id: 3,
-        method: 'tools/call',
-        params: {
-          name: 'explain_event',
-          arguments: { inbox_token: inbox.token, mcp_token: mcpToken, event_id: capturedIds[1] },
-        },
-      }) + '\n',
-    ])
-
-    stdioTransport({
-      stdin, stdout,
-      listTools: surface.listTools,
-      callTool:  surface.callTool,
+  async function send(body, headers = {}) {
+    return server.inject({
+      method:  'POST',
+      url:     '/mcp',
+      headers: {
+        'content-type': 'application/json',
+        accept:         'application/json, text/event-stream',
+        ...headers,
+      },
+      payload: typeof body === 'string' ? body : JSON.stringify(body),
     })
+  }
 
-    const lines = await waitForWrites(writes, 3)
-    const resps = lines.map(JSON.parse)
-    expect(resps[0].id).toBe(1)
-    expect(resps[0].result.tools.map((t) => t.name)).toEqual([
+  async function callTool(name, args, opts = {}) {
+    const headers = opts.token !== null
+      ? { authorization: `Bearer ${opts.token ?? mcpToken}` }
+      : {}
+    const response = await send({
+      jsonrpc: '2.0', id: 1, method: 'tools/call',
+      params: { name, arguments: args },
+    }, headers)
+    return { status: response.statusCode, body: JSON.parse(response.body) }
+  }
+
+  it('advertises the expected tool surface on tools/list', async () => {
+    const response = await send({ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} },
+      { authorization: `Bearer ${mcpToken}` })
+    expect(response.statusCode).toBe(200)
+    const body = JSON.parse(response.body)
+    expect(body.id).toBe(1)
+    expect(body.result.tools.map((t) => t.name)).toEqual([
       'list_events', 'get_event', 'search_events', 'diff_events', 'explain_event',
     ])
-
-    expect(resps[1].id).toBe(2)
-    expect(Array.isArray(resps[1].result.events)).toBe(true)
-    expect(resps[1].result.events.length).toBe(2)
-
-    expect(resps[2].id).toBe(3)
-    expect(resps[2].result.provider).toBe('github')
-    expect(resps[2].result.summary).toContain('push')
+    for (const tool of body.result.tools) {
+      expect(tool.inputSchema).toBeDefined()
+      expect(tool.inputSchema.properties).toBeDefined()
+      expect(tool.inputSchema.properties.inbox_token).toBeUndefined()
+      expect(tool.inputSchema.properties.mcp_token).toBeUndefined()
+    }
   })
 
-  it('returns a transport-level JSON-RPC error when the mcp token is wrong', async () => {
-    const db = getTestDb()
-    const mcpAuth    = new MongoMcpAuthRepository(db)
-    const readModel  = new MongoRequestListReadModel(db)
-    const searchModel = new MongoRequestSearchReadModel(db)
-    const surface = provideTools({ mcpAuth, readModel, searchModel })
+  it('completes an initialize + tools/list + tools/call flow', async () => {
+    const init = await send({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} },
+      { authorization: `Bearer ${mcpToken}` })
+    expect(init.statusCode).toBe(200)
+    const initBody = JSON.parse(init.body)
+    expect(initBody.result.serverInfo.name).toBe('peekhook')
+    expect(initBody.result.capabilities.tools).toBeDefined()
 
-    const writes = []
-    const stdout = new Writable({ write(chunk, _enc, cb) { writes.push(chunk.toString()); cb() } })
-    const stdin = Readable.from([
-      JSON.stringify({
-        jsonrpc: '2.0',
-        id: 99,
-        method: 'tools/call',
-        params: {
-          name: 'list_events',
-          arguments: { inbox_token: inbox.token, mcp_token: 'definitely-wrong-token' },
-        },
-      }) + '\n',
-    ])
+    const ack = await send({ jsonrpc: '2.0', method: 'notifications/initialized' },
+      { authorization: `Bearer ${mcpToken}` })
+    expect(ack.statusCode).toBe(202)
 
-    stdioTransport({
-      stdin, stdout,
-      listTools: surface.listTools,
-      callTool:  surface.callTool,
-    })
-
-    const lines = await waitForWrites(writes, 1)
-    const resp = JSON.parse(lines[0])
-    expect(resp.id).toBe(99)
-    expect(resp.error).toBeDefined()
-    expect(resp.error.message).toMatch(/auth failed/)
+    const call = await callTool('list_events', { limit: 5 })
+    expect(call.status).toBe(200)
+    expect(call.body.id).toBe(1)
+    expect(Array.isArray(call.body.result.content)).toBe(true)
+    expect(call.body.result.content[0].type).toBe('text')
+    const text = JSON.parse(call.body.result.content[0].text)
+    expect(text.events.length).toBe(2)
+    expect(call.body.result.structuredContent.events.length).toBe(2)
   })
 
-  it('replies with method-not-found for unknown JSON-RPC methods', async () => {
-    const db = getTestDb()
-    const mcpAuth    = new MongoMcpAuthRepository(db)
-    const readModel  = new MongoRequestListReadModel(db)
-    const searchModel = new MongoRequestSearchReadModel(db)
-    const surface = provideTools({ mcpAuth, readModel, searchModel })
+  it('runs explain_event end-to-end via Bearer auth', async () => {
+    const response = await send({
+      jsonrpc: '2.0', id: 1, method: 'tools/call',
+      params: {
+        name: 'explain_event',
+        arguments: { event_id: await githubEventId(getTestDb()) },
+      },
+    }, { authorization: `Bearer ${mcpToken}` })
+    expect(response.statusCode).toBe(200)
+    const body = JSON.parse(response.body)
+    expect(body.result.structuredContent.provider).toBe('github')
+    expect(body.result.structuredContent.summary).toContain('push')
+  })
 
-    const writes = []
-    const stdout = new Writable({ write(chunk, _enc, cb) { writes.push(chunk.toString()); cb() } })
-    const stdin = Readable.from([
-      JSON.stringify({ jsonrpc: '2.0', id: 7, method: 'tools/poke', params: {} }) + '\n',
-    ])
-
-    stdioTransport({
-      stdin, stdout,
-      listTools: surface.listTools,
-      callTool:  surface.callTool,
+  it('returns 401 with WWW-Authenticate when no Bearer header is sent', async () => {
+    const response = await send({
+      jsonrpc: '2.0', id: 1, method: 'tools/call',
+      params: { name: 'list_events', arguments: {} },
     })
+    expect(response.statusCode).toBe(401)
+    expect(response.headers['www-authenticate']).toMatch(/Bearer/)
+    const body = JSON.parse(response.body)
+    expect(body.error.code).toBe(-32001)
+  })
 
-    const lines = await waitForWrites(writes, 1)
-    const resp = JSON.parse(lines[0])
-    expect(resp.id).toBe(7)
-    expect(resp.error.code).toBe(-32601)
+  it('returns 401 when the Bearer token does not match an inbox', async () => {
+    const response = await send({
+      jsonrpc: '2.0', id: 1, method: 'tools/call',
+      params: { name: 'list_events', arguments: {} },
+    }, { authorization: 'Bearer definitely-not-a-real-token' })
+    expect(response.statusCode).toBe(401)
+    const body = JSON.parse(response.body)
+    expect(body.error.message).toMatch(/invalid token/)
+  })
+
+  it('rejects Authorization headers that are not Bearer', async () => {
+    const response = await send({
+      jsonrpc: '2.0', id: 1, method: 'tools/call',
+      params: { name: 'list_events', arguments: {} },
+    }, { authorization: `Basic ${mcpToken}` })
+    expect(response.statusCode).toBe(401)
+    const body = JSON.parse(response.body)
+    expect(body.error.message).toMatch(/Bearer/)
+  })
+
+  it('returns method-not-found for unknown JSON-RPC methods', async () => {
+    const response = await send({ jsonrpc: '2.0', id: 7, method: 'tools/poke', params: {} },
+      { authorization: `Bearer ${mcpToken}` })
+    expect(response.statusCode).toBe(200)
+    const body = JSON.parse(response.body)
+    expect(body.id).toBe(7)
+    expect(body.error.code).toBe(-32601)
+    expect(body.error.message).toMatch(/tools\/poke/)
+  })
+
+  it('returns invalid-params when tools/call is missing name', async () => {
+    const response = await send({
+      jsonrpc: '2.0', id: 8, method: 'tools/call',
+      params: { arguments: {} },
+    }, { authorization: `Bearer ${mcpToken}` })
+    expect(response.statusCode).toBe(200)
+    const body = JSON.parse(response.body)
+    expect(body.error.code).toBe(-32602)
+  })
+
+  it('returns 405 for GET /mcp', async () => {
+    const response = await server.inject({ method: 'GET', url: '/mcp' })
+    expect(response.statusCode).toBe(405)
+    expect(response.headers.allow).toBe('POST')
+  })
+
+  it('returns parse-error for malformed JSON bodies', async () => {
+    const response = await send('not-json-at-all',
+      { authorization: `Bearer ${mcpToken}` })
+    expect(response.statusCode).toBe(400)
+    const body = JSON.parse(response.body)
+    expect(body.error.code).toBe(-32700)
   })
 })
+
+async function githubEventId(db) {
+  const docs = await db.collection('requests').find({ 'headers.x-github-event': 'push' }).limit(1).toArray()
+  return docs[0]._id.toString()
+}

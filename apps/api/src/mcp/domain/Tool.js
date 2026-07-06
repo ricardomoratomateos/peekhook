@@ -1,11 +1,12 @@
 /**
  * Tool — pure dataclass describing a single MCP tool.
  *
- * Handlers are async `(args) => result`. They are constructed at
- * wire-up time so they can close over their use case's dependencies.
+ * Handlers are async `(args, ctx) => result`. `ctx` is the per-request
+ * context threaded in by the dispatcher — for HTTP it carries
+ * `{ inboxToken }` resolved by Bearer-token authentication.
  *
- * The dispatcher in `infra/stdioTransport` calls `tool.handler(args)`
- * after `VerifyMcpToken` has authenticated the call.
+ * The dispatcher in `infra/mcp.http.js` calls `tool.handler(args, ctx)`
+ * after the transport has authenticated the request.
  */
 export class Tool {
   /**
@@ -13,7 +14,7 @@ export class Tool {
    *   name: string,
    *   description: string,
    *   inputSchema: object,
-   *   handler: (args: object) => Promise<any>,
+   *   handler: (args: object, ctx: object) => Promise<any>,
    * }} props
    */
   constructor({ name, description, inputSchema, handler }) {
@@ -29,9 +30,9 @@ export class Tool {
     if (typeof handler !== 'function') {
       throw new Error('Tool.handler must be a function')
     }
-    this.name = name
+    this.name        = name
     this.description = description
     this.inputSchema = inputSchema
-    this.handler = handler
+    this.handler     = handler
   }
 }

@@ -156,13 +156,18 @@ the rationale + effort remain as historical record.
 
 ### AI / MCP wedge (moat)
 
-7. **MCP server** *(medium → large)* ✓ shipped (backend 5 stdio
-   tools + McpTokenCard sidebar component with copy + curl-style
-   usage snippet). stdio transport. Auth via inbox-scoped API
-   key. Tools: `list_events`, `get_event`, `search_events`,
-   `diff_events`, `explain_event`, `create_endpoint`. Closes the
-   agent-in-the-loop debugging flow in Claude Code / Cursor /
-   Cline.
+7. **MCP server** *(medium → large)* ✓ shipped (backend exposes a
+    single Streamable HTTP endpoint at `POST /mcp` + McpTokenCard
+    sidebar component with copy + ready-to-paste client config
+    snippets for Claude Code / Cursor / curl). Streamable HTTP
+    transport per MCP spec (JSON-RPC 2.0 over HTTP). Auth via
+    `Authorization: Bearer <mcp_token>` (hashed SHA-256 lookup, inbox
+    resolution per request, no per-tool credentials). Tools:
+    `list_events`, `get_event`, `search_events`, `diff_events`,
+    `explain_event`. Distribution is a single URL — paste into any MCP
+    client, no `npm install`, no Docker, no local process. Closes the
+    agent-in-the-loop debugging flow in Claude Code / Cursor /
+    Cline.
 8. **`explain_event`** *(small → medium)* ✓ shipped (lives inside
    the MCP server as `explain_event` tool — `peekhook.explain_event
    ({inbox_token, event_id}) → {provider, summary, fields}`).
@@ -251,7 +256,9 @@ the rationale + effort remain as historical record.
   round-trip through the public-nginx → API chain).
 - **v0.3**: shipped #1 (JS scripting), #5 (schema-history data
   layer), #6 (schema-history query surface), #7 (MCP server,
-  5 tools over stdio) via 3 parallel agents + serial merges.
+  5 tools over stdio; later flipped to Streamable HTTP transport
+  with a single `POST /mcp` Fastify route and Bearer-token auth)
+  via 3 parallel agents + serial merges.
   58/58 tests green in apps/api after all 3 merges.
 - **v0.2**: dropped #4 capture-endpoint-with-forward (the
   "tunnel-sniffer" idea escalated to "tunnel-as-a-service"

@@ -18,6 +18,23 @@ export class McpAuthRepository {
   }
 
   /**
+   * Resolve the inbox whose stored `mcpTokenHash` matches the supplied
+   * SHA-256 hex. Used by the HTTP transport to authenticate requests
+   * from a `Bearer` header (the bearer token is the mcp_token plaintext;
+   * we hash it once on the request path then look it up).
+   *
+   * Returns the inbox doc (with `mcpTokenHash` field omitted from the
+   * projection so it cannot be re-hashed downstream) or `null` if no
+   * inbox is enrolled with that hash.
+   *
+   * @param {string} hashHex SHA-256 hex of the candidate mcp token
+   * @returns {Promise<object|null>}
+   */
+  async findByMcpTokenHash(hashHex) {
+    throw new Error('McpAuthRepository.findByMcpTokenHash not implemented')
+  }
+
+  /**
    * Persist a freshly minted SHA-256 hex hash for an inbox.
    *
    * Idempotent: overwrites any prior hash on the same token (tokens

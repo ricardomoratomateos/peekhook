@@ -7,6 +7,13 @@ Per-inbox URL, capture any HTTP request, live SSE stream into the
 inspector panel (method, headers, query, body, IP). Configurable
 mock reply (status, content-type, body) to simulate failures.
 
+MCP server (Streamable HTTP transport) lives at `POST /mcp` behind
+the same Fastify process. Auth via `Authorization: Bearer <mcp_token>`
+(SHA-256 hash lookup against the existing `inboxes` collection, no
+per-tool credentials). 5 tools: `list_events`, `get_event`,
+`search_events`, `diff_events`, `explain_event`. Distribution is a
+single URL — paste into Claude Code / Cursor / Cline, no install.
+
 ## Tech
 - Backend: Fastify + Mongo, TTL 7 days on `inboxes` and `requests`
 - Frontend: Vite + React 18 + react-router-dom 6, no SSR

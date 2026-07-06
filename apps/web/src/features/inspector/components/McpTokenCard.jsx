@@ -8,6 +8,8 @@ function McpTokenCard({ mcpToken: initialToken, inboxToken, onTokenChange }) {
   const [minting, setMinting] = useState(false)
   const [mintError, setMintError] = useState(null)
 
+  const mcpUrl = mcpEndpoint()
+
   async function handleCopy() {
     if (!token) return
     try { await navigator.clipboard.writeText(token) } catch (_) {}
@@ -36,13 +38,42 @@ function McpTokenCard({ mcpToken: initialToken, inboxToken, onTokenChange }) {
     }
   }
 
+  const [copiedConfig, setCopiedConfig] = useState(null)
+
+  async function handleCopyConfig(label, body) {
+    try { await navigator.clipboard.writeText(body) } catch (_) {}
+    setCopiedConfig(label)
+    setTimeout(() => setCopiedConfig(null), 2000)
+  }
+
   return (
     <div style={mc.section}>
       <div style={mc.card}>
-        <span style={mc.cardTitle}>token</span>
+        <span style={mc.cardTitle}>mcp endpoint</span>
+        <p style={mc.mcpHint}>
+          point any MCP-compatible client (Claude Code, Cursor, Cline, …) at this URL
+          with the inbox token as the Bearer credential. No local process required.
+        </p>
+
+        <div style={mc.urlRow}>
+          <code style={mc.urlText} title={mcpUrl}>{mcpUrl}</code>
+          <button
+            type="button"
+            onClick={() => handleCopyConfig('url', mcpUrl)}
+            className="sb-copy"
+            style={mc.tokenCopy}
+            aria-label={copiedConfig === 'url' ? 'Copied URL' : 'Copy MCP URL'}
+          >
+            <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>
+              {copiedConfig === 'url' ? 'check' : 'link'}
+            </span>
+            <span>{copiedConfig === 'url' ? 'copied' : 'copy url'}</span>
+          </button>
+        </div>
 
         {token ? (
           <>
+            <span style={mc.cardTitle}>bearer token</span>
             <div style={mc.tokenRow}>
               <span style={mc.tokenText} title={token}>{token}</span>
               <button
@@ -102,25 +133,90 @@ function McpTokenCard({ mcpToken: initialToken, inboxToken, onTokenChange }) {
 
       {token && (
         <div style={mc.curlBlock}>
-          <div style={mc.curlHead}>use from Claude Code / Cursor</div>
-          <pre style={mc.curlCode}>{buildMcpSnippet(token, inboxToken)}</pre>
+          <div style={mc.curlHead}>connect from your client</div>
+          <ConfigSnippet
+            label="claude desktop / claude code"
+            body={buildClaudeSnippet(mcpUrl, token)}
+            onCopy={handleCopyConfig}
+            copied={copiedConfig === 'claude'}
+          />
+          <ConfigSnippet
+            label="cursor"
+            body={buildCursorSnippet(mcpUrl, token)}
+            onCopy={handleCopyConfig}
+            copied={copiedConfig === 'cursor'}
+          />
+          <ConfigSnippet
+            label="curl (any MCP client)"
+            body={buildCurlSnippet(mcpUrl, token)}
+            onCopy={handleCopyConfig}
+            copied={copiedConfig === 'curl'}
+          />
         </div>
       )}
     </div>
   )
 }
 
-function buildMcpSnippet(mcpToken, inboxToken) {
-  return `# 1. capture something
-curl -X POST http://localhost:3000/i/${inboxToken} \\
-  -H 'content-type: application/json' -d '{}'
+function ConfigSnippet({ label, body, onCopy, copied }) {
+  return (
+    <div style={mc.configGroup}>
+      <div style={mc.configHead}>
+        <span style={mc.configLabel}>{label}</span>
+        <button
+          type="button"
+          onClick={() => onCopy(label.split(' ')[0], body)}
+          className="sb-copy"
+          style={mc.tokenCopy}
+          aria-label={`Copy ${label}`}
+        >
+          <span className="material-symbols-outlined" style={{ fontSize: '13px' }}>
+            {copied ? 'check' : 'content_copy'}
+          </span>
+          <span>{copied ? 'copied' : 'copy'}</span>
+        </button>
+      </div>
+      <pre style={mc.configCode}>{body}</pre>
+    </div>
+  )
+}
 
-# 2. ask your agent: "list recent events on the inbox"
+function mcpEndpoint() {
+  if (typeof window === 'undefined') return '/mcp'
+  return `${window.location.origin}/mcp`
+}
 
-# the MCP tools (peekhook.list_events,
-# peekhook.get_event, peekhook.search_events,
-# peekhook.diff_events, peekhook.explain_event)
-# are invoked automatically by the agent`
+function buildClaudeSnippet(url, token) {
+  return JSON.stringify({
+    mcpServers: {
+      peekhook: {
+        type: 'http',
+        url,
+        headers: { Authorization: `Bearer ${token}` },
+      },
+    },
+  }, null, 2)
+}
+
+function buildCursorSnippet(url, token) {
+  return JSON.stringify({
+    mcpServers: {
+      peekhook: {
+        url,
+        headers: { Authorization: `Bearer ${token}` },
+      },
+    },
+  }, null, 2)
+}
+
+function buildCurlSnippet(url, token) {
+  return [
+    'curl -s -X POST ' + url,
+    '  -H "Content-Type: application/json"',
+    '  -H "Authorization: Bearer ' + token + '"',
+    '  -H "Accept: application/json, text/event-stream"',
+    "  -d '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\"}'",
+  ].join(' \\\n')
 }
 
 export default McpTokenCard
