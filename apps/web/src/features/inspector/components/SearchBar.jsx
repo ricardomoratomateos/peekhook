@@ -3,12 +3,7 @@ import { c } from '../lib/tokens.js'
 import { api } from '../../../lib/api.js'
 import { parseNaturalLanguage } from '../lib/nlParse.js'
 
-const EXAMPLES = [
-  'stripe events',
-  'events over $50',
-  'github push',
-  'error responses',
-]
+const FIELDS = ['body', 'path', 'header:user-agent']
 
 export default function SearchBar({ token, onResults, onClear }) {
   const [query, setQuery] = useState('')
@@ -16,14 +11,12 @@ export default function SearchBar({ token, onResults, onClear }) {
   const [status, setStatus] = useState('idle')
   const [count, setCount] = useState(null)
   const [error, setError] = useState(null)
-  const [nlResolved, setNlResolved] = useState(null)
 
   useEffect(() => {
     if (!token || !query.trim()) {
       setStatus('idle')
       setCount(null)
       setError(null)
-      setNlResolved(null)
       onClear?.()
       return
     }
@@ -31,12 +24,6 @@ export default function SearchBar({ token, onResults, onClear }) {
     const parsed = parseNaturalLanguage(query)
     const useField = parsed.field || field
     const useRegex = parsed.regex || query
-
-    if (useRegex !== query || useField !== field) {
-      setNlResolved({ regex: useRegex, field: useField, provider: parsed.provider, amount: parsed.amount })
-    } else {
-      setNlResolved(null)
-    }
 
     const timer = setTimeout(async () => {
       setStatus('searching')
@@ -57,176 +44,108 @@ export default function SearchBar({ token, onResults, onClear }) {
     return () => clearTimeout(timer)
   }, [query, field, token])
 
-  function applyExample(ex) {
-    setQuery(ex)
+  function cycleField() {
+    const i = FIELDS.indexOf(field)
+    setField(FIELDS[(i + 1) % FIELDS.length])
   }
 
+  const statusDot = status === 'searching' ? c.accent
+    : status === 'error' ? 'var(--status-red)'
+    : status === 'done' ? c.accent
+    : c.faint
+
   return (
-    <div style={wrap}>
-      <div style={head}>
-        <span style={title}>search</span>
-        <span style={pill}>
-          {status === 'searching' ? '…'
-            : status === 'error' ? 'error'
-            : status === 'done' ? `${count} match${count === 1 ? '' : 'es'}`
-            : 'idle'}
-        </span>
-      </div>
+    <div style={bar}>
+      <span className="material-symbols-outlined" style={icon}>search</span>
       <input
         type="text"
         value={query}
         onChange={e => setQuery(e.target.value)}
-        placeholder="regex or natural language…"
+        placeholder="search requests…"
         spellCheck={false}
-        style={{
-          ...input,
-          borderColor: status === 'error' ? 'var(--status-red)' : c.border,
-        }}
+        aria-label="search requests"
+        style={input}
       />
-      <div style={fieldRow}>
-        {['body', 'path', 'header:user-agent'].map(f => (
-          <button
-            key={f}
-            type="button"
-            onClick={() => setField(f)}
-            className="sb-searchfield"
-            style={{
-              ...fieldBtn,
-              ...(field === f ? fieldBtnActive : {}),
-            }}
-            aria-pressed={field === f}
-          >
-            {f}
-          </button>
-        ))}
-      </div>
-      {nlResolved && (
-        <div style={hintRow}>
-          <span style={hintLabel}>translated to</span>
-          <code style={hintCode}>{nlResolved.regex}</code>
-          {nlResolved.field !== field && (
-            <>
-              <span style={hintLabel}>in</span>
-              <code style={hintCode}>{nlResolved.field}</code>
-            </>
-          )}
-        </div>
+      {query && (
+        <>
+          <span style={{ ...dot, background: statusDot }} aria-hidden />
+          <span style={statusText}>
+            {status === 'searching' ? '…'
+              : status === 'error' ? 'err'
+              : status === 'done' ? `${count}`
+              : ''}
+          </span>
+        </>
       )}
-      {query === '' && (
-        <div style={examplesRow}>
-          <span style={examplesLabel}>try</span>
-          {EXAMPLES.map(ex => (
-            <button
-              key={ex}
-              type="button"
-              onClick={() => applyExample(ex)}
-              className="sb-searchexample"
-              style={exampleBtn}
-            >
-              {ex}
-            </button>
-          ))}
-        </div>
-      )}
-      {error && <div style={errMsg}>{error}</div>}
+      <button
+        type="button"
+        onClick={cycleField}
+        style={fieldPill}
+        aria-label={`search in ${field}, click to change`}
+        title={`search in ${field}`}
+      >
+        {field}
+      </button>
     </div>
   )
 }
 
-const wrap = {
-  margin: '0 12px 14px',
-  padding: '10px 12px',
+const bar = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: '8px',
+  padding: '8px 10px',
   border: `1px solid ${c.border}`,
-  borderRadius: '6px',
+  borderRadius: '8px',
   background: c.bg,
   flexShrink: 0,
-  display: 'flex',
-  flexDirection: 'column',
-  gap: '6px',
 }
 
-const head = {
-  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-  marginBottom: '2px',
-}
-
-const title = {
-  fontFamily: c.mono, fontSize: '10px', fontWeight: 600,
-  color: c.faint, letterSpacing: '0.2em', textTransform: 'uppercase',
-}
-
-const pill = {
-  fontFamily: c.mono, fontSize: '10px', color: c.faint, letterSpacing: '0.04em',
+const icon = {
+  fontSize: '15px',
+  color: c.faint,
+  lineHeight: 1,
+  flexShrink: 0,
 }
 
 const input = {
-  width: '100%',
-  background: c.lowest,
-  border: `1px solid ${c.border}`,
-  borderRadius: '4px',
+  flex: 1,
+  minWidth: 0,
+  background: 'transparent',
+  border: 'none',
   color: c.fg,
   fontFamily: c.mono,
-  fontSize: '11px',
-  padding: '6px 8px',
+  fontSize: '12px',
+  padding: 0,
   outline: 'none',
 }
 
-const fieldRow = {
-  display: 'flex', gap: '4px', flexWrap: 'wrap',
+const dot = {
+  width: '6px',
+  height: '6px',
+  borderRadius: '50%',
+  flexShrink: 0,
+  transition: 'background 0.15s',
 }
 
-const fieldBtn = {
-  background: 'transparent',
-  border: `1px solid ${c.border}`,
-  borderRadius: '3px',
-  color: c.faint,
+const statusText = {
   fontFamily: c.mono,
-  fontSize: '9px',
-  padding: '2px 6px',
-  cursor: 'pointer',
-  letterSpacing: '0.04em',
-  transition: 'background 0.12s, color 0.12s, border-color 0.12s',
-}
-const fieldBtnActive = {
-  background: c.low,
-  color: c.fg,
-  borderColor: c.borderSoft,
-}
-
-const hintRow = {
-  display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap',
   fontSize: '10px',
-}
-const hintLabel = {
-  fontFamily: c.mono, color: c.faint, textTransform: 'uppercase', letterSpacing: '0.1em',
-}
-const hintCode = {
-  fontFamily: c.mono, color: c.dim, background: c.low,
-  padding: '1px 4px', borderRadius: '3px', fontSize: '10px',
-}
-
-const examplesRow = {
-  display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap',
-}
-const examplesLabel = {
-  fontFamily: c.mono, fontSize: '9px', color: c.faint, textTransform: 'uppercase', letterSpacing: '0.1em',
-  marginRight: '2px',
-}
-const exampleBtn = {
-  background: 'transparent',
-  border: '1px dashed ' + c.border,
-  borderRadius: '3px',
-  color: c.dim,
-  fontFamily: c.mono,
-  fontSize: '9px',
-  padding: '2px 5px',
-  cursor: 'pointer',
+  color: c.faint,
   letterSpacing: '0.04em',
-  transition: 'color 0.12s, border-color 0.12s',
+  minWidth: '20px',
 }
 
-const errMsg = {
-  fontSize: '11px',
-  color: 'var(--status-red)',
+const fieldPill = {
   fontFamily: c.mono,
+  fontSize: '10px',
+  color: c.dim,
+  background: c.ctr,
+  border: `1px solid ${c.border}`,
+  borderRadius: '999px',
+  padding: '2px 8px',
+  cursor: 'pointer',
+  flexShrink: 0,
+  letterSpacing: '0.04em',
+  transition: 'background 0.12s, color 0.12s',
 }

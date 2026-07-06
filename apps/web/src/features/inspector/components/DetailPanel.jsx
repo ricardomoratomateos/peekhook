@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { c } from '../lib/tokens.js'
-import { methodTone, formatBody, formatSize, prettyPath } from '../lib/format.js'
+import { methodTone, formatBody, formatSize, prettyPath, timeAgo } from '../lib/format.js'
 import KVTable from './KVTable.jsx'
 import Meta from './Meta.jsx'
 import { d } from '../styles.js'
@@ -154,7 +154,7 @@ export default function DetailPanel({ req, token }) {
     <div style={d.panel}>
       <div style={d.header}>
         <div style={d.headerLeft}>
-          <div style={d.eyebrow}>sandbox · inbox</div>
+          <div style={d.eyebrow}>event · {timeAgo(req.createdAt)}</div>
           <div style={d.headlineRow}>
             <span style={{ ...d.methodLg, color: t.color, fontWeight: t.weight }}>{(req.method || '?').toLowerCase()}</span>
             <span style={d.pathLg}>{prettyPath(req.path, token)}</span>

@@ -1,8 +1,16 @@
 # Inspector 2026 — Layout Redesign
 
 **Owner:** design
-**Status:** implemented
+**Status:** superseded — see [DESIGN.md](../../../DESIGN.md)
 **Target:** `apps/web/src/features/inspector/InspectorView.jsx`
+
+> **Note:** This document describes the v2.0 design (icon rail + 300 px
+> workspace sidebar + detail pane). The shipped version evolved further:
+> the workspace sidebar was removed entirely and each tab is now a full
+> page. See the root [DESIGN.md](../../../DESIGN.md) for the current system.
+> The historical analysis in §1–§3 is still useful context for *why*
+> layout iterations matter; the component-relocation plan in §5 was not
+> what shipped.
 
 ---
 

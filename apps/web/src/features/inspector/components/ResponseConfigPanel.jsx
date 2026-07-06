@@ -5,7 +5,16 @@ import { RESPONSE_PRESETS, RESPONSE_DEFAULTS } from '../lib/responsePresets.js'
 import { rc } from '../styles.js'
 
 const SCRIPT_MAX = 8192
-const SCRIPT_DEFAULT = `// runs in a sandboxed node:vm context\n// 'request' is available with { method, path, query, headers, body }\n// return a string to send as the response body\n\nreturn JSON.stringify({\n  echo: request.body,\n  method: request.method,\n  stamped_at: new Date().toISOString()\n});\n`
+const SCRIPT_DEFAULT = `// runs in a sandboxed node:vm context
+// 'request' is available with { method, path, query, headers, body }
+// return a string to send as the response body
+
+return JSON.stringify({
+  echo: request.body,
+  method: request.method,
+  stamped_at: new Date().toISOString()
+});
+`
 
 export default function ResponseConfigPanel({ token }) {
   const [saved, setSaved]         = useState(null)
@@ -18,7 +27,6 @@ export default function ResponseConfigPanel({ token }) {
   const [script, setScript]       = useState('')
   const [saving, setSaving]       = useState(false)
   const [error, setError]         = useState(null)
-  const [open, setOpen]           = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -83,119 +91,112 @@ export default function ResponseConfigPanel({ token }) {
   const scriptOver = script.length > SCRIPT_MAX
 
   return (
-    <div style={{ ...rc.wrap, padding: open ? '12px' : '5px 12px', gap: open ? '8px' : '0' }}>
+    <div style={rc.section}>
+      <div style={rc.sectionHead}>
+        <span style={rc.sectionTitle}>response</span>
+        {!loading && <StatusPill rs={saved} />}
+      </div>
+
       <button
         type="button"
-        onClick={() => setOpen(o => !o)}
-        className="sb-replybtn"
-        style={rc.headBtn}
-        aria-expanded={open}
+        onClick={() => setEnabled(e => !e)}
+        className="sb-switchrow"
+        style={rc.switchRow}
+        aria-pressed={enabled}
       >
-        <span style={rc.headLeft}>
-          <span style={rc.title}>reply</span>
-          {!loading && <StatusPill rs={saved} />}
+        <span>
+          <span style={rc.switchRowLabel}>custom reply</span>
+          <div style={rc.switchHint}>{enabled ? 'on — your script or body is returned' : 'off — default 200 ok'}</div>
         </span>
-        <span className="material-symbols-outlined" style={rc.chev}>
-          {open ? 'expand_less' : 'expand_more'}
+        <span style={{ ...rc.switchTrack, ...(enabled ? rc.switchTrackOn : {}) }}>
+          <span style={{ ...rc.switchThumb, ...(enabled ? rc.switchThumbOn : {}) }} />
         </span>
       </button>
 
-      {open && (
-        <>
-          <button
-            type="button"
-            onClick={() => setEnabled(e => !e)}
-            className="sb-switchrow"
-            style={rc.switchRow}
-            aria-pressed={enabled}
-          >
-            <span style={rc.switchRowLabel}>use custom reply</span>
-            <span style={{ ...rc.switchTrack, ...(enabled ? rc.switchTrackOn : {}) }}>
-              <span style={{ ...rc.switchThumb, ...(enabled ? rc.switchThumbOn : {}) }} />
-            </span>
-          </button>
-
-          {enabled && (
-            <>
+      {enabled && (
+        <div style={rc.card}>
+          <div style={rc.fieldRow}>
+            <div style={rc.field}>
               <label style={rc.label}>status</label>
               <select value={status} onChange={e => setStatus(Number(e.target.value))} style={rc.select}>
                 {RESPONSE_PRESETS.status.map(p => (
                   <option key={p.v} value={p.v}>{p.l}</option>
                 ))}
               </select>
-
+            </div>
+            <div style={rc.field}>
               <label style={rc.label}>content-type</label>
               <select value={contentType} onChange={e => setCT(e.target.value)} style={rc.select}>
                 {RESPONSE_PRESETS.contentType.map(p => (
                   <option key={p.v} value={p.v}>{p.l}</option>
                 ))}
               </select>
+            </div>
+          </div>
 
-              <label style={rc.label}>body (static fallback)</label>
+          <div style={rc.field}>
+            <label style={rc.label}>body · static fallback</label>
+            <textarea
+              value={body}
+              onChange={e => setBody(e.target.value)}
+              placeholder='{"ok":true}'
+              spellCheck={false}
+              style={rc.textarea}
+            />
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setScriptEnabled(s => !s)}
+            className="sb-switchrow"
+            style={rc.switchRow}
+            aria-pressed={scriptEnabled}
+          >
+            <span>
+              <span style={rc.switchRowLabel}>js script</span>
+              <div style={rc.switchHint}>overrides body · 200ms timeout · sandboxed</div>
+            </span>
+            <span style={{ ...rc.switchTrack, ...(scriptEnabled ? rc.switchTrackOn : {}) }}>
+              <span style={{ ...rc.switchThumb, ...(scriptEnabled ? rc.switchThumbOn : {}) }} />
+            </span>
+          </button>
+
+          {scriptEnabled && (
+            <div style={rc.field}>
+              <label style={rc.label}>script source</label>
               <textarea
-                value={body}
-                onChange={e => setBody(e.target.value)}
-                placeholder='{"ok":true}'
+                value={script}
+                onChange={e => setScript(e.target.value.slice(0, SCRIPT_MAX + 256))}
+                placeholder={SCRIPT_DEFAULT}
                 spellCheck={false}
-                style={rc.textarea}
+                style={{
+                  ...rc.textarea,
+                  minHeight: '200px',
+                  borderColor: scriptOver ? 'var(--status-red)' : c.border,
+                }}
               />
-
-              <button
-                type="button"
-                onClick={() => setScriptEnabled(s => !s)}
-                className="sb-switchrow"
-                style={{ ...rc.switchRow, marginTop: '4px' }}
-                aria-pressed={scriptEnabled}
-              >
-                <span style={rc.switchRowLabel}>use js script (override body)</span>
-                <span style={{ ...rc.switchTrack, ...(scriptEnabled ? rc.switchTrackOn : {}) }}>
-                  <span style={{ ...rc.switchThumb, ...(scriptEnabled ? rc.switchThumbOn : {}) }} />
-                </span>
-              </button>
-
-              {scriptEnabled && (
-                <>
-                  <label style={rc.label}>script · 200ms timeout · sandboxed</label>
-                  <textarea
-                    value={script}
-                    onChange={e => setScript(e.target.value.slice(0, SCRIPT_MAX + 256))}
-                    placeholder={SCRIPT_DEFAULT}
-                    spellCheck={false}
-                    style={{
-                      ...rc.textarea,
-                      minHeight: '120px',
-                      borderColor: scriptOver ? 'var(--status-red)' : c.border,
-                    }}
-                  />
-                  <div style={{
-                    fontFamily: c.mono, fontSize: '10px',
-                    color: scriptOver ? 'var(--status-red)' : c.faint,
-                    marginTop: '2px',
-                    textAlign: 'right',
-                  }}>
-                    {script.length}/{SCRIPT_MAX}
-                  </div>
-                </>
-              )}
-
-              <div style={rc.btnRow}>
-                <button
-                  onClick={handleSave}
-                  disabled={saving || scriptOver}
-                  className="sb-accent"
-                  style={rc.btnPrimary}
-                >
-                  {saving ? 'saving…' : 'save'}
-                </button>
-                <button onClick={handleClear} disabled={saving} style={rc.btnGhost}>
-                  reset
-                </button>
+              <div style={scriptOver ? rc.scriptCountOver : rc.scriptCount}>
+                {script.length}/{SCRIPT_MAX}
               </div>
-
-              {error && <div style={rc.error}>{error}</div>}
-            </>
+            </div>
           )}
-        </>
+
+          <div style={rc.btnRow}>
+            <button
+              onClick={handleSave}
+              disabled={saving || scriptOver}
+              className="sb-accent"
+              style={rc.btnPrimary}
+            >
+              {saving ? 'saving…' : 'save'}
+            </button>
+            <button onClick={handleClear} disabled={saving} style={rc.btnGhost}>
+              reset
+            </button>
+          </div>
+
+          {error && <div style={rc.error}>{error}</div>}
+        </div>
       )}
     </div>
   )
