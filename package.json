@@ -1,0 +1,16 @@
+{
+  "name": "peekhook",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": ["apps/*"],
+  "scripts": {
+    "dev": "concurrently -n api,web -c blue,green \"npm run dev:api\" \"npm run dev:web\"",
+    "dev:api": "npm run dev -w @peekhook/api",
+    "dev:web": "npm run dev -w @peekhook/web",
+    "build": "npm run build -w @peekhook/web",
+    "start": "npm run start -w @peekhook/api"
+  },
+  "devDependencies": {
+    "concurrently": "^9.0.0"
+  }
+}
