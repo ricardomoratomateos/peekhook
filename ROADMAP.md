@@ -44,6 +44,59 @@ its weight against the curl-then-look-at-the-Inspector flow.
 - 405 on GET `/i/:token` (reserved for the Inspector UI)
 - Dev proxy: `/api/*` forwarded to Fastify on :3000
 
+## Remaining to ship
+
+The 14 candidate features below are tracked individually with
+`✓ shipped` markers. Quick view of what's left (six items,
+four backend-only needing only UI glue and two still pure
+frontend):
+
+### Frontend-only (no new backend needed)
+
+- **#2 Browser notifications** *(small)* — Service Worker +
+  Notification API on the inspector. Prompt for permission on
+  the first capture received while the tab is in background.
+- **#4 Two-event diff side-by-side** *(medium)* — pick two
+  captures in the request list, render headers + body diffed
+  visually with character-level highlighting.
+- **#9 Schema-drift callouts** *(small)* — once schema-history
+  is loaded, badge on DetailPanel "3 of the last 5 events
+  have a new field `metadata.refund_reason`".
+
+### Backend shipped, only inspector surface missing
+
+- **#3 Search + filter input** *(small → medium)* — wire the
+  inspector's existing input box to the already-deployed
+  `/requests/search` endpoint. Add a debounced input + result
+  badge in the sidebar.
+- **#6 Diff across time range picker** *(small)* — point a date
+  picker at the existing schema-history endpoint; render
+  "values seen" per field within the selection.
+- **#11 Fixture-library buttons** *(small)* — add a "send
+  fixture" button row inside EmptyState that posts each of the
+  4 ship-loaded fixtures to the inbox.
+- **#12 Replay-with-mutations button** *(small → medium)* —
+  add a "replay" button on the DetailPanel that calls the
+  already-deployed `/replay` endpoint with the event id.
+
+### Mixed (new endpoint + UI)
+
+- **#10 Natural-language search** *(medium)* — small backend
+  NL-to-regex parser over the existing search endpoint +
+  inspector input bar with NLP-style examples.
+- **#13 Share link (read-only)** *(small)* — new GET endpoint
+  returning a single capture DTO + a frontend share button
+  that copies a `peekhook.dev/c/<id>` URL with no auth.
+
+### Deferred to "won't build until demand"
+
+- Vanity URLs (`my-shop.peekhook.dev`). Free → token URL.
+- Slack / Discord / Teams / email notifiers (subsumed by MCP).
+- Embed iframe.
+- Browser extension (Postman / Insomnia proved low adoption).
+- Email inbound (`xxx@peekhook.dev` → captured event).
+- Tunnel-style capture-and-forward.
+
 ## Candidate features (the 14)
 
 Each entry has the rationale and an effort tag (small = days,
@@ -88,7 +141,7 @@ starting work; reorder freely when pull demands.
    `explain_event`, `create_endpoint`. Closes the
    agent-in-the-loop debugging flow in Claude Code / Cursor /
    Cline.
-8. **`explain_event`** *(small → medium)*. Provider fingerprint
+8. **`explain_event`** *(small → medium)* ✓ shipped (lives inside the MCP server as `explain_event` tool — `peekhook.explain_event({inbox_token, event_id}) → {provider, summary, fields}`). Provider fingerprint
    detection (Stripe / GitHub / Linear shape match) plus a
    one-line human-readable summary. Used both via MCP and as
    a UI panel inside the Inspector.
@@ -150,6 +203,18 @@ starting work; reorder freely when pull demands.
   counter (red on overflow, save disabled). Landing now persists
   mcpToken in localStorage + navigate state so the inspector
   finds it on load.
+- v0.7: added `POST /api/inboxes/:token/regenerate-mcp`
+  endpoint (rotates the inbox's MCP hash + returns plaintext).
+  McpTokenCard now always renders (un-gated on token presence)
+  with a "mint a fresh token" CTA when opened by URL. The
+  scroll-button count of "things to look at" got noisy for
+  direct-URL visitors; the new path lets them recover without
+  re-creating the inbox.
+- v0.8: ROADMAP reorganized. Added explicit "Remaining to
+  ship" section listing the six outstanding items (4
+  backend-only-needing-frontend, 2 net-new) before the
+  numbered candidate list, so a 30-second skim of the doc
+  tells you what's left.
 - v0.4: shipped #14 self-host docker-compose (one-command
   bring-up of mongo + api + web with healthchecks and SPA-aware
   nginx; verified end-to-end with a scripted POST round-trip
