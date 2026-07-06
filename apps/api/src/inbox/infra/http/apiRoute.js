@@ -1,17 +1,17 @@
 import { ObjectId } from 'mongodb'
-import { getDb } from '../../shared/db.js'
-import { config } from '../../config.js'
+import { getDb } from '../../../shared/db.js'
+import { config } from '../../../config.js'
 import { Outcome } from '../../domain/Outcome.js'
 import { CreateInbox } from '../../app/CreateInbox.js'
 import { ListRequests } from '../../app/ListRequests.js'
 import { GetRequest } from '../../app/GetRequest.js'
 import { ConfigureResponse } from '../../app/ConfigureResponse.js'
-import { GetSchemaHistory } from '../../features/schema-history/app/GetSchemaHistory.js'
+import { GetSchemaHistory } from '../../../schema-history/app/GetSchemaHistory.js'
 import { MongoInboxRepository } from '../persistence/MongoInboxRepository.js'
 import { MongoRequestListReadModel } from '../persistence/MongoRequestListReadModel.js'
-import { MongoMcpAuthRepository } from '../../features/mcp/infra/MongoMcpAuthRepository.js'
-import { MintMcpToken } from '../../features/mcp/app/MintMcpToken.js'
-import { MongoPayloadSchemaRepository } from '../../features/schema-history/infra/MongoPayloadSchemaRepository.js'
+import { MongoMcpAuthRepository } from '../../../mcp/infra/MongoMcpAuthRepository.js'
+import { MintMcpToken } from '../../../mcp/app/MintMcpToken.js'
+import { MongoPayloadSchemaRepository } from '../../../schema-history/infra/MongoPayloadSchemaRepository.js'
 
 function makeUseCases() {
   const db = getDb()

@@ -2,13 +2,13 @@ import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest'
 import Fastify from 'fastify'
 import { MongoMemoryServer } from 'mongodb-memory-server'
 import { MongoClient } from 'mongodb'
-import { SandboxInbox } from '../../domain/SandboxInbox.js'
-import { MongoInboxRepository } from '../../infra/persistence/MongoInboxRepository.js'
-import ingestRoute from '../../infra/http/ingestRoute.js'
+import { SandboxInbox } from '../inbox/domain/SandboxInbox.js'
+import { MongoInboxRepository } from '../inbox/infra/persistence/MongoInboxRepository.js'
+import ingestRoute from '../inbox/infra/http/ingestRoute.js'
 
 const mockDb = vi.hoisted(() => ({ db: null }))
 
-vi.mock('../../shared/db.js', () => ({
+vi.mock('../shared/db.js', () => ({
   connectDb: async () => {},
   getDb:     () => mockDb.db,
   closeDb:   async () => {},

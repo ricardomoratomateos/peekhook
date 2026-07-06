@@ -8,7 +8,7 @@
  * MVP deploy; multi-replica deployments will need a coordinated
  * backend (redis, mongo). Documented as a known limitation.
  *
- * Implementations live under `features/replay/infra/`. Tests
+ * Implementations live under `replay/infra/`. Tests
  * provide an inline fake.
  */
 export class ReplayRateLimiter {

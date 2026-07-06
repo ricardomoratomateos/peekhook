@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
-import { startMongo, getTestDb, stopMongo } from '../../test/helpers/mongoMemory.js'
+import { startMongo, getTestDb, stopMongo } from '../../../test/helpers/mongoMemory.js'
 import { MongoInboxRepository } from '../infra/persistence/MongoInboxRepository.js'
 import { MongoCapturedRequestRepository } from '../infra/persistence/MongoCapturedRequestRepository.js'
 import { SandboxInbox } from '../domain/SandboxInbox.js'

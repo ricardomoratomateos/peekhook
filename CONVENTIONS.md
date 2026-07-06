@@ -14,11 +14,12 @@ independent work streams.
 
 ## Layering (backend)
 
-Every feature follows the same shape. New code goes in
-`apps/api/src/features/<feature-name>/` with three layers:
+Every module follows the same shape. New code goes in
+`apps/api/src/<module>/` with three layers. There is no
+`features/` umbrella — modules are siblings of `src/`.
 
 ```
-features/<feature-name>/
+src/<module>/
   domain/         pure aggregates + ports. NO infra imports.
   app/            use cases (one class per use case).
   infra/
@@ -26,9 +27,14 @@ features/<feature-name>/
     persistence/  Mongo adapters (only for adapter shape).
 ```
 
-Existing shares (`apps/api/src/shared/`) holds cross-feature
+The inbox core (`src/inbox/`) is itself a module by this rule.
+It owns `/api/inboxes/...` (the inspector feed) and
+`/i/:token` (the public ingest endpoint). All other modules
+sit alongside it as siblings.
+
+Existing shares (`apps/api/src/shared/`) holds cross-module
 infrastructure only: Mongo connection, config, audit. Do not
-add feature code to `shared/`.
+add module code to `shared/`.
 
 ## Hexagonal boundaries (hard rules)
 

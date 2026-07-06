@@ -1,5 +1,5 @@
-import { getDb } from '../../shared/db.js'
-import { MongoInboxRepository } from '../../infra/persistence/MongoInboxRepository.js'
+import { getDb } from '../shared/db.js'
+import { MongoInboxRepository } from '../inbox/infra/persistence/MongoInboxRepository.js'
 import { MongoRegexSearchRepository } from './infra/MongoRegexSearchRepository.js'
 import { SearchEvents } from './app/SearchEvents.js'
 

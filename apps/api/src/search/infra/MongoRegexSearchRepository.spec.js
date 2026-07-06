@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { ObjectId } from 'mongodb'
-import { startMongo, stopMongo } from '../../../../test/helpers/mongoMemory.js'
-import { SandboxInbox } from '../../../domain/SandboxInbox.js'
-import { MongoInboxRepository } from '../../../infra/persistence/MongoInboxRepository.js'
+import { startMongo, stopMongo } from '../../../test/helpers/mongoMemory.js'
+import { SandboxInbox } from '../../inbox/domain/SandboxInbox.js'
+import { MongoInboxRepository } from '../../inbox/infra/persistence/MongoInboxRepository.js'
 import { MongoRegexSearchRepository } from './MongoRegexSearchRepository.js'
 import { SearchField } from '../domain/SearchField.js'
 

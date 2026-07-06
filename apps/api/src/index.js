@@ -2,11 +2,11 @@ import Fastify from 'fastify'
 import fastifyCors from '@fastify/cors'
 import { config } from './config.js'
 import { connectDb, closeDb } from './shared/db.js'
-import ingestRoute from './infra/http/ingestRoute.js'
-import apiRoute from './infra/http/apiRoute.js'
-import { registerSearchRoutes } from './features/search/search.http.js'
-import registerFixtureRoutes from './features/fixtures/infra/fixtures.http.js'
-import { registerReplayRoutes } from './features/replay/infra/replay.http.js'
+import ingestRoute from './inbox/infra/http/ingestRoute.js'
+import apiRoute from './inbox/infra/http/apiRoute.js'
+import { registerSearchRoutes } from './search/search.http.js'
+import registerFixtureRoutes from './fixtures/infra/fixtures.http.js'
+import { registerReplayRoutes } from './replay/infra/replay.http.js'
 
 const fastify = Fastify({
   logger: { level: config.isProd ? 'warn' : 'info' },

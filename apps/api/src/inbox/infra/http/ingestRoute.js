@@ -1,12 +1,12 @@
-import { getDb } from '../../shared/db.js'
+import { getDb } from '../../../shared/db.js'
 import { CaptureRequest } from '../../app/CaptureRequest.js'
 import { Outcome } from '../../domain/Outcome.js'
 import { MongoInboxRepository } from '../persistence/MongoInboxRepository.js'
 import { MongoCapturedRequestRepository } from '../persistence/MongoCapturedRequestRepository.js'
-import { runScript } from '../../features/scripting/index.js'
-import { ScriptOutcome } from '../../features/scripting/domain/ScriptErrors.js'
-import { MongoPayloadSchemaRepository } from '../../features/schema-history/infra/MongoPayloadSchemaRepository.js'
-import { RecordSchema } from '../../features/schema-history/app/RecordSchema.js'
+import { runScript } from '../../../scripting/index.js'
+import { ScriptOutcome } from '../../../scripting/domain/ScriptErrors.js'
+import { MongoPayloadSchemaRepository } from '../../../schema-history/infra/MongoPayloadSchemaRepository.js'
+import { RecordSchema } from '../../../schema-history/app/RecordSchema.js'
 
 function makeCaptureRequest() {
   const db = getDb()

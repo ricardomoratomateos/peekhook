@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest'
 import Fastify from 'fastify'
 import { ObjectId } from 'mongodb'
-import { startMongo, getTestDb, stopMongo } from '../../../test/helpers/mongoMemory.js'
-import { SandboxInbox }    from '../../domain/SandboxInbox.js'
-import { MongoInboxRepository } from '../../infra/persistence/MongoInboxRepository.js'
+import { startMongo, getTestDb, stopMongo } from '../../test/helpers/mongoMemory.js'
+import { SandboxInbox }    from '../inbox/domain/SandboxInbox.js'
+import { MongoInboxRepository } from '../inbox/infra/persistence/MongoInboxRepository.js'
 import { MongoRegexSearchRepository } from './infra/MongoRegexSearchRepository.js'
 import { SearchEvents } from './app/SearchEvents.js'
 import { registerSearchRoutes } from './search.http.js'
@@ -15,7 +15,7 @@ import { registerSearchRoutes } from './search.http.js'
  */
 const mockDb = vi.hoisted(() => ({ db: null }))
 
-vi.mock('../../shared/db.js', () => ({
+vi.mock('../shared/db.js', () => ({
   connectDb: async () => {},
   getDb:     () => mockDb.db,
   closeDb:   async () => {},
@@ -106,7 +106,7 @@ describe('search route (Fastify inject)', () => {
     // straight at the read model so the spec stays self-contained
     // (no need to also mount apiRoute.js here).
     const db = getTestDb()
-    const { MongoRequestListReadModel } = await import('../../infra/persistence/MongoRequestListReadModel.js')
+    const { MongoRequestListReadModel } = await import('../inbox/infra/persistence/MongoRequestListReadModel.js')
     const listDtos = await new MongoRequestListReadModel(db)
       .list({ inboxToken, limit: 50 })
 

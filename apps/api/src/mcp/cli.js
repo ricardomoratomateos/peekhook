@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 import { MongoClient } from 'mongodb'
-import { config } from '../../config.js'
+import { config } from '../config.js'
 import { MongoMcpAuthRepository } from './infra/MongoMcpAuthRepository.js'
-import { MongoRequestListReadModel } from '../../infra/persistence/MongoRequestListReadModel.js'
+import { MongoRequestListReadModel } from '../inbox/infra/persistence/MongoRequestListReadModel.js'
 import { MongoRequestSearchReadModel } from './infra/MongoRequestSearchReadModel.js'
 import { VerifyMcpToken } from './app/VerifyMcpToken.js'
 import { provideTools } from './infra/provideTools.js'
