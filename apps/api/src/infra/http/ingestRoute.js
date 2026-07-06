@@ -1,5 +1,4 @@
-import { ObjectId } from 'mongodb'
-import { getDb } from '../../../shared/config/db.js'
+import { getDb } from '../../shared/db.js'
 import { CaptureRequest } from '../../app/CaptureRequest.js'
 import { Outcome } from '../../domain/Outcome.js'
 import { MongoInboxRepository } from '../persistence/MongoInboxRepository.js'
