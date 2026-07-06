@@ -19,4 +19,12 @@ export class MongoCapturedRequestRepository extends CapturedRequestRepository {
   async insert(req) {
     await this.col.insertOne(req.toDocument())
   }
+
+  async updateUpstreamResponse(id, upstream) {
+    if (!ObjectId.isValid(id)) return
+    await this.col.updateOne(
+      { _id: new ObjectId(id) },
+      { $set: { upstreamResponse: upstream } },
+    )
+  }
 }

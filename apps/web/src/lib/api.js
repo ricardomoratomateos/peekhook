@@ -1,7 +1,12 @@
 async function request(path, options = {}) {
+  const hasBody = options.body !== undefined && options.body !== null
+  const headers = hasBody
+    ? { 'Content-Type': 'application/json', ...options.headers }
+    : { ...options.headers }
+
   const res = await fetch(path, {
-    headers: { 'Content-Type': 'application/json', ...options.headers },
     ...options,
+    headers,
   })
 
   if (!res.ok) {
@@ -31,6 +36,15 @@ export const api = {
 
   clearResponse: (token) =>
     request(`/api/inboxes/${token}/response`, { method: 'DELETE' }),
+
+  setForward: (token, forwardTo) =>
+    request(`/api/inboxes/${token}/forward`, {
+      method: 'PUT',
+      body: JSON.stringify({ forwardTo }),
+    }),
+
+  clearForward: (token) =>
+    request(`/api/inboxes/${token}/forward`, { method: 'DELETE' }),
 
   streamUrl: (token) => `/api/inboxes/${token}/stream`,
 

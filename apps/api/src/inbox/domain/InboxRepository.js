@@ -30,4 +30,15 @@ export class InboxRepository {
   async updateResponseConfig(token, responseConfig) {
     throw new Error('InboxRepository.updateResponseConfig not implemented')
   }
+
+  /**
+   * Set or clear the configured forward target. Pass `null` to clear.
+   *
+   * @param {string} token
+   * @param {null | string} forwardTo  validated http(s) URL or null
+   * @returns {Promise<void>}
+   */
+  async updateForwardTo(token, forwardTo) {
+    throw new Error('InboxRepository.updateForwardTo not implemented')
+  }
 }

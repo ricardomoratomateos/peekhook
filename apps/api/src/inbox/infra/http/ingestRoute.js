@@ -1,5 +1,7 @@
 import { getDb } from '../../../shared/db.js'
+import { config } from '../../../config.js'
 import { CaptureRequest } from '../../app/CaptureRequest.js'
+import { ForwardRequest } from '../../app/ForwardRequest.js'
 import { Outcome } from '../../domain/Outcome.js'
 import { MongoInboxRepository } from '../persistence/MongoInboxRepository.js'
 import { MongoCapturedRequestRepository } from '../persistence/MongoCapturedRequestRepository.js'
@@ -15,6 +17,13 @@ function makeCaptureRequest() {
     inboxes:      new MongoInboxRepository(db),
     requests:     new MongoCapturedRequestRepository(db),
     recordSchema: new RecordSchema({ schemas }),
+  })
+}
+
+function makeForwardRequest(params) {
+  return new ForwardRequest({
+    ...params,
+    ingestOrigin: config.ingestUrl,
   })
 }
 
@@ -49,6 +58,81 @@ async function captureHandler(request, reply) {
     return reply.code(404).send({ error: 'Inbox not found' })
   }
 
+  const captureId = result.id.toString()
+  const db = getDb()
+  const capturedRepo = new MongoCapturedRequestRepository(db)
+
+  if (result.forwardTo) {
+    const fwd = await makeForwardRequest({
+      targetUrl: result.forwardTo,
+      method:    request.method,
+      headers:   request.headers,
+      body:      rawBody,
+    }).execute()
+
+    let upstreamDto
+    let replyStatus
+    let replyHeaders
+    let replyBody
+
+    if (fwd.ok) {
+      upstreamDto = {
+        status:      fwd.status,
+        headers:     fwd.headers,
+        body:        fwd.body,
+        contentType: fwd.contentType,
+        durationMs:  fwd.durationMs,
+      }
+      replyStatus  = fwd.status
+      replyHeaders = fwd.headers
+      replyBody    = fwd.body
+    } else if (fwd.error === 'loop') {
+      upstreamDto = {
+        error:      'loop',
+        message:    fwd.message,
+        durationMs: fwd.durationMs,
+      }
+      replyStatus = 502
+      replyBody   = { error: 'forward loop detected', message: fwd.message }
+    } else if (fwd.error === 'timeout') {
+      upstreamDto = {
+        error:      'timeout',
+        message:    fwd.message,
+        durationMs: fwd.durationMs,
+      }
+      replyStatus = 504
+      replyBody   = { error: 'forward timeout', message: fwd.message }
+    } else {
+      upstreamDto = {
+        error:      fwd.error,
+        message:    fwd.message,
+        durationMs: fwd.durationMs,
+      }
+      replyStatus = 502
+      replyBody   = { error: 'forward failed', message: fwd.message }
+    }
+
+    try {
+      await capturedRepo.updateUpstreamResponse(captureId, upstreamDto)
+    } catch (_err) {
+      /* capture update failure must not change the response to the caller */
+    }
+
+    const reply2 = reply.code(replyStatus)
+    if (replyHeaders && typeof replyHeaders === 'object') {
+      for (const [k, v] of Object.entries(replyHeaders)) {
+        if (k.toLowerCase() === 'content-type') continue
+        reply2.header(k, v)
+      }
+    }
+    if (replyHeaders && replyHeaders['content-type']) {
+      reply2.header('content-type', replyHeaders['content-type'])
+    } else if (fwd.ok) {
+      reply2.header('content-type', fwd.contentType || 'application/octet-stream')
+    }
+    return reply2.send(replyBody)
+  }
+
   const cfg = result.responseConfig
   if (cfg && cfg.enabled) {
     let body = cfg.body
@@ -77,7 +161,7 @@ async function captureHandler(request, reply) {
       .send(body)
   }
 
-  return reply.code(200).send({ ok: true, id: result.id.toString() })
+  return reply.code(200).send({ ok: true, id: captureId })
 }
 
 export default async function ingestRoute(fastify) {

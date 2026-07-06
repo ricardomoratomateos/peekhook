@@ -43,11 +43,11 @@ export class CaptureRequest {
    *   size:        number,
    *   ip:          string,
    * }} cmd
-   * @returns {Promise<{ outcome: string, id?: *, responseConfig: null | object }>}
+   * @returns {Promise<{ outcome: string, id?: *, responseConfig: null | object, forwardTo: null | string }>}
    */
   async execute({ inboxToken, method, path, query, headers, body, contentType, size, ip }) {
     const inbox = await this.inboxes.findByToken(inboxToken)
-    if (!inbox) return { outcome: Outcome.INBOX_NOT_FOUND, responseConfig: null }
+    if (!inbox) return { outcome: Outcome.INBOX_NOT_FOUND, responseConfig: null, forwardTo: null }
 
     const id  = this.requests.nextId()
     const now = this.now()
@@ -77,6 +77,11 @@ export class CaptureRequest {
       }
     }
 
-    return { outcome: Outcome.CAPTURED, id, responseConfig: inbox.responseConfig ?? null }
+    return {
+      outcome:        Outcome.CAPTURED,
+      id,
+      responseConfig: inbox.responseConfig ?? null,
+      forwardTo:      inbox.forwardTo      ?? null,
+    }
   }
 }

@@ -3,7 +3,7 @@ import { c } from '../lib/tokens.js'
 import { methodTone, formatBody, formatSize, prettyPath, timeAgo } from '../lib/format.js'
 import KVTable from './KVTable.jsx'
 import Meta from './Meta.jsx'
-import { d } from '../styles.js'
+import { d, fr } from '../styles.js'
 import { api } from '../../../lib/api.js'
 
 /**
@@ -241,7 +241,44 @@ export default function DetailPanel({ req, token }) {
             ? <pre style={d.bodyPre}>{bodyText}</pre>
             : <span style={{ fontSize: '12px', color: c.faint }}>empty body</span>}
         </section>
+        {req.upstreamResponse && (
+          <section style={d.section}>
+            <ForwardedSection upstream={req.upstreamResponse} />
+          </section>
+        )}
       </div>
+    </div>
+  )
+}
+
+function ForwardedSection({ upstream }) {
+  const err = upstream && upstream.error
+  const statusChip = err
+    ? <span style={fr.statusErr}>{upstream.error}</span>
+    : <span style={fr.statusOk}>{upstream.status}</span>
+
+  return (
+    <div style={fr.section}>
+      <div style={d.sectionTitle}>forwarded response</div>
+      <div style={fr.statusRow}>
+        {statusChip}
+        {upstream.contentType && (
+          <span style={{ ...fr.pill }}>{upstream.contentType}</span>
+        )}
+        {typeof upstream.durationMs === 'number' && (
+          <span style={{ ...fr.pill }}>{upstream.durationMs}ms</span>
+        )}
+      </div>
+      {err ? (
+        <pre style={fr.pre}>{upstream.message || upstream.error}</pre>
+      ) : upstream.body ? (
+        <pre style={fr.pre}>{formatBody(upstream.body, upstream.contentType) || upstream.body}</pre>
+      ) : (
+        <span style={{ fontSize: '12px', color: c.faint, fontFamily: c.mono }}>empty body</span>
+      )}
+      {upstream.headers && Object.keys(upstream.headers).length > 0 && (
+        <KVTable rows={Object.entries(upstream.headers)} />
+      )}
     </div>
   )
 }

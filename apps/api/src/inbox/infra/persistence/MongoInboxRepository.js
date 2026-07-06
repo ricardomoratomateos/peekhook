@@ -24,4 +24,11 @@ export class MongoInboxRepository extends InboxRepository {
       { $set: { responseConfig } },
     )
   }
+
+  async updateForwardTo(token, forwardTo) {
+    await this.col.updateOne(
+      { token },
+      { $set: { forwardTo } },
+    )
+  }
 }

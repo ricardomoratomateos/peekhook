@@ -91,6 +91,8 @@ export const rc = {
   fieldRow:     { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' },
   label:        { fontFamily: c.mono, fontSize: '10px', color: c.faint, letterSpacing: '0.18em', textTransform: 'uppercase' },
   select:       { background: c.lowest, border: `1px solid ${c.border}`, borderRadius: '6px', color: c.fg, fontFamily: c.mono, fontSize: '12px', padding: '9px 12px', outline: 'none', width: '100%' },
+  input:        { background: c.lowest, border: `1px solid ${c.border}`, borderRadius: '6px', color: c.fg, fontFamily: c.mono, fontSize: '12px', padding: '9px 12px', outline: 'none', width: '100%' },
+  inputOver:    { borderColor: 'var(--status-red)' },
   textarea:     { background: c.lowest, border: `1px solid ${c.border}`, borderRadius: '6px', color: c.fg, fontFamily: c.mono, fontSize: '12px', padding: '12px 14px', minHeight: '120px', resize: 'vertical', outline: 'none', lineHeight: 1.55, width: '100%' },
   switchRow:    { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', background: 'transparent', border: `1px solid ${c.border}`, borderRadius: '6px', padding: '12px 14px', cursor: 'pointer', width: '100%', textAlign: 'left' },
   switchRowLabel:{ fontFamily: c.sans, fontSize: '13px', color: c.fg, fontWeight: 500 },
@@ -105,6 +107,28 @@ export const rc = {
   scriptCount:  { fontFamily: c.mono, fontSize: '10px', color: c.faint, textAlign: 'right' },
   scriptCountOver: { fontFamily: c.mono, fontSize: '10px', color: 'var(--status-red)', textAlign: 'right' },
   error:        { fontSize: '12px', color: 'var(--status-red)', fontFamily: c.mono },
+}
+
+export const md = {
+  backdrop:    { position: 'fixed', inset: 0, zIndex: 100, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px', backdropFilter: 'blur(2px)' },
+  box:         { background: c.bg, border: `1px solid ${c.border}`, borderRadius: '10px', padding: '22px', maxWidth: '460px', width: '100%', display: 'flex', flexDirection: 'column', gap: '14px', boxShadow: '0 24px 60px rgba(0,0,0,0.45)' },
+  title:       { fontFamily: c.sans, fontSize: '15px', fontWeight: 500, color: c.fg },
+  body:        { fontFamily: c.sans, fontSize: '13px', color: c.dim, lineHeight: 1.55 },
+  bodyMono:    { fontFamily: c.mono, fontSize: '11px', color: c.fg, background: c.lowest, border: `1px solid ${c.border}`, borderRadius: '4px', padding: '8px 10px', wordBreak: 'break-all' },
+  actions:     { display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '4px' },
+}
+
+export const fr = {
+  section:     { display: 'flex', flexDirection: 'column', gap: '14px', maxWidth: '760px' },
+  pill:        { display: 'inline-flex', alignItems: 'center', gap: '6px', fontFamily: c.mono, fontSize: '10px', color: c.faint, letterSpacing: '0.04em', padding: '3px 8px', borderRadius: '999px', border: `1px solid ${c.border}`, background: c.bg },
+  pillOk:      { color: c.accent },
+  pillDot:     { width: '5px', height: '5px', borderRadius: '50%', background: c.accent },
+  statusRow:   { display: 'flex', alignItems: 'center', gap: '10px', fontFamily: c.mono, fontSize: '12px', color: c.dim },
+  statusOk:    { display: 'inline-flex', alignItems: 'center', padding: '2px 7px', borderRadius: '3px', background: c.low, border: `1px solid ${c.border}`, color: c.fg, fontSize: '10px' },
+  statusErr:   { display: 'inline-flex', alignItems: 'center', padding: '2px 7px', borderRadius: '3px', background: 'var(--status-red-bg, transparent)', border: `1px solid var(--status-red, ${c.border})`, color: 'var(--status-red)', fontSize: '10px' },
+  pre:         { background: c.lowest, border: `1px solid ${c.border}`, borderRadius: '6px', padding: '14px', fontSize: '12px', color: c.fg, fontFamily: c.mono, overflowX: 'auto', lineHeight: 1.55, whiteSpace: 'pre-wrap', wordBreak: 'break-word', margin: 0 },
+  meta:        { display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap', fontFamily: c.mono, fontSize: '10px', color: c.faint, letterSpacing: '0.04em' },
+  metaKey:     { color: c.dim },
 }
 
 export const mc = {

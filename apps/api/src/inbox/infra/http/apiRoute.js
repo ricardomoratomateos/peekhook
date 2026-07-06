@@ -6,6 +6,7 @@ import { CreateInbox } from '../../app/CreateInbox.js'
 import { ListRequests } from '../../app/ListRequests.js'
 import { GetRequest } from '../../app/GetRequest.js'
 import { ConfigureResponse } from '../../app/ConfigureResponse.js'
+import { ConfigureForward } from '../../app/ConfigureForward.js'
 import { GetSchemaHistory } from '../../../schema-history/app/GetSchemaHistory.js'
 import { MongoInboxRepository } from '../persistence/MongoInboxRepository.js'
 import { MongoRequestListReadModel } from '../persistence/MongoRequestListReadModel.js'
@@ -24,6 +25,7 @@ function makeUseCases() {
     listRequests:      new ListRequests({ requests: readModel }),
     getRequest:        new GetRequest({ requests: readModel }),
     configureResponse: new ConfigureResponse({ inboxes: inboxRepo }),
+    configureForward:  new ConfigureForward({ inboxes: inboxRepo }),
     mintMcpToken:      new MintMcpToken({ mcpAuth }),
     getSchemaHistory:  new GetSchemaHistory({ schemas: schemaRepo }),
   }
@@ -31,16 +33,17 @@ function makeUseCases() {
 
 function toDto(doc) {
   return {
-    id:          doc._id.toString(),
-    method:      doc.method,
-    path:        doc.path,
-    query:       doc.query,
-    headers:     doc.headers,
-    body:        doc.body,
-    contentType: doc.contentType,
-    size:        doc.size,
-    ip:          doc.ip,
-    createdAt:   doc.createdAt,
+    id:               doc._id.toString(),
+    method:           doc.method,
+    path:             doc.path,
+    query:            doc.query,
+    headers:          doc.headers,
+    body:             doc.body,
+    contentType:      doc.contentType,
+    size:             doc.size,
+    ip:               doc.ip,
+    createdAt:        doc.createdAt,
+    upstreamResponse: doc.upstreamResponse ?? null,
   }
 }
 
@@ -50,10 +53,12 @@ export default async function apiRoute(fastify) {
     const result = await createInbox.execute()
     const { mcpToken } = await mintMcpToken.execute({ inboxToken: result.token })
     return reply.code(201).send({
-      token:     result.token,
-      url:       `${config.ingestUrl}/i/${result.token}`,
-      expiresAt: result.expiresAt,
-      mcp_token: mcpToken,
+      token:        result.token,
+      url:          `${config.ingestUrl}/i/${result.token}`,
+      expiresAt:    result.expiresAt,
+      mcp_token:    mcpToken,
+      forwardTo:    null,
+      responseConfig: null,
     })
   })
 
@@ -152,9 +157,10 @@ export default async function apiRoute(fastify) {
     if (!inbox) return reply.code(404).send({ error: 'Inbox not found' })
     return reply.send({
       token,
-      url:       `${config.ingestUrl}/i/${token}`,
-      expiresAt: inbox.expiresAt,
+      url:           `${config.ingestUrl}/i/${token}`,
+      expiresAt:     inbox.expiresAt,
       responseConfig: inbox.responseConfig ?? null,
+      forwardTo:     inbox.forwardTo ?? null,
     })
   })
 
@@ -189,6 +195,33 @@ export default async function apiRoute(fastify) {
 
     if (result.outcome === Outcome.NOT_FOUND) return reply.code(404).send({ error: 'Inbox not found' })
     return reply.send({ token, responseConfig: null })
+  })
+
+  // Forwarding target. Sibling of /response: same shape, different field.
+  // Precedence with responseConfig is "forwardTo wins" — but both can be
+  // set in storage independently. The UI surfaces a modal warning when one
+  // overwrites the other; the server treats them as independent inputs.
+  fastify.put('/api/inboxes/:token/forward', async (request, reply) => {
+    const { token } = request.params
+    const body = request.body ?? {}
+    const { configureForward } = makeUseCases()
+    const result = await configureForward.execute({
+      token,
+      forwardTo: body.forwardTo ?? null,
+    })
+
+    if (result.outcome === Outcome.NOT_FOUND) return reply.code(404).send({ error: 'Inbox not found' })
+    if (result.outcome === Outcome.INVALID)  return reply.code(400).send({ error: result.error })
+    return reply.send({ token, forwardTo: result.forwardTo })
+  })
+
+  fastify.delete('/api/inboxes/:token/forward', async (request, reply) => {
+    const { token } = request.params
+    const { configureForward } = makeUseCases()
+    const result = await configureForward.execute({ token, forwardTo: null })
+
+    if (result.outcome === Outcome.NOT_FOUND) return reply.code(404).send({ error: 'Inbox not found' })
+    return reply.send({ token, forwardTo: null })
   })
 
   // Mint a fresh MCP token for an existing inbox. The plaintext is

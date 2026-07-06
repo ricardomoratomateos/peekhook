@@ -10,16 +10,17 @@ const MAX_LIMIT     = 200
  */
 function toDto(doc) {
   return {
-    id:          doc._id.toString(),
-    method:      doc.method,
-    path:        doc.path,
-    query:       doc.query,
-    headers:     doc.headers,
-    body:        doc.body,
-    contentType: doc.contentType,
-    size:        doc.size,
-    ip:          doc.ip,
-    createdAt:   doc.createdAt,
+    id:               doc._id.toString(),
+    method:           doc.method,
+    path:             doc.path,
+    query:            doc.query,
+    headers:          doc.headers,
+    body:             doc.body,
+    contentType:      doc.contentType,
+    size:             doc.size,
+    ip:               doc.ip,
+    createdAt:        doc.createdAt,
+    upstreamResponse: doc.upstreamResponse ?? null,
   }
 }
 

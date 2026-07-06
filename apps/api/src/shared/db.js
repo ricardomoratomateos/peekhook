@@ -39,6 +39,18 @@ export function getDb() {
   return db
 }
 
+// Test-only setters. Prefix `__` signals internal. Tests point the
+// module at an in-memory Mongo (mongodb-memory-server) so use cases can
+// be wired without spinning up the real connection flow.
+export function __setDbForTest(testDb) {
+  db = testDb
+}
+
+export function __resetDbForTest() {
+  db = undefined
+  client = undefined
+}
+
 export async function closeDb() {
   if (client) await client.close()
 }

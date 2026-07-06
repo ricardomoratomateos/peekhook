@@ -4,6 +4,7 @@ const INBOX_TTL_MS = 7 * 24 * 60 * 60 * 1000
 
 const DEFAULT_RESPONSE = { enabled: false, status: 200, contentType: 'application/json', body: '' }
 const SCRIPT_MAX_BYTES = 8 * 1024
+const FORWARD_URL_MAX_BYTES = 2048
 
 /**
  * Pure validator for sandbox response configurations, exposed so the
@@ -35,6 +36,38 @@ export function validateResponseConfig(cfg) {
 }
 
 /**
+ * Validate a `forwardTo` URL. Returns the normalised URL string, or `null`
+ * when the caller passes null/undefined (clear). Throws on anything else.
+ *
+ *   - Must be a string (or nullish).
+ *   - Must parse with the WHATWG URL parser.
+ *   - Protocol must be http: or https:.
+ *   - Total byte length capped (defensive).
+ *
+ * Does NOT enforce a public-IP allowlist — the whole point of this feature
+ * is to forward to localhost / private dev servers. Loop protection is a
+ * separate concern, handled at forward time against the public ingest URL.
+ */
+export function validateForwardUrl(raw) {
+  if (raw === null || raw === undefined) return null
+  if (typeof raw !== 'string') throw new Error('forwardTo must be a string')
+  if (raw.length === 0) throw new Error('forwardTo must be a non-empty string')
+  if (Buffer.byteLength(raw, 'utf8') > FORWARD_URL_MAX_BYTES) {
+    throw new Error(`forwardTo exceeds ${FORWARD_URL_MAX_BYTES} byte limit`)
+  }
+  let parsed
+  try {
+    parsed = new URL(raw)
+  } catch (_err) {
+    throw new Error('forwardTo must be a valid http(s) URL')
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    throw new Error('forwardTo protocol must be http: or https:')
+  }
+  return raw
+}
+
+/**
  * SandboxInbox aggregate.
  *
  * An ephemeral webhook inbox, identified by a URL-safe random token.
@@ -56,12 +89,14 @@ export class SandboxInbox {
   #createdAt
   #expiresAt
   #responseConfig
+  #forwardTo
 
-  constructor({ token, createdAt, expiresAt, responseConfig }) {
+  constructor({ token, createdAt, expiresAt, responseConfig, forwardTo }) {
     this.#token = token
     this.#createdAt = createdAt
     this.#expiresAt = expiresAt
     this.#responseConfig = responseConfig ?? null
+    this.#forwardTo = forwardTo ?? null
   }
 
   /**
@@ -81,6 +116,7 @@ export class SandboxInbox {
   get createdAt()      { return this.#createdAt }
   get expiresAt()      { return this.#expiresAt }
   get responseConfig() { return this.#responseConfig }
+  get forwardTo()      { return this.#forwardTo }
 
   /** Snapshot for persistence. The only way state leaves the aggregate. */
   toDocument() {
@@ -89,6 +125,7 @@ export class SandboxInbox {
       createdAt:      this.#createdAt,
       expiresAt:      this.#expiresAt,
       responseConfig: this.#responseConfig,
+      forwardTo:      this.#forwardTo,
     }
   }
 }

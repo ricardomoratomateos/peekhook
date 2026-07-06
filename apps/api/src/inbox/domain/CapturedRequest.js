@@ -22,20 +22,22 @@ export class CapturedRequest {
   #ip
   #createdAt
   #expiresAt
+  #upstreamResponse
 
   constructor(props) {
-    this.#id          = props.id
-    this.#inboxToken  = props.inboxToken
-    this.#method      = props.method
-    this.#path        = props.path
-    this.#query       = props.query
-    this.#headers     = props.headers
-    this.#body        = props.body
-    this.#contentType = props.contentType
-    this.#size        = props.size
-    this.#ip          = props.ip
-    this.#createdAt   = props.createdAt
-    this.#expiresAt   = props.expiresAt
+    this.#id               = props.id
+    this.#inboxToken       = props.inboxToken
+    this.#method           = props.method
+    this.#path             = props.path
+    this.#query            = props.query
+    this.#headers          = props.headers
+    this.#body             = props.body
+    this.#contentType      = props.contentType
+    this.#size             = props.size
+    this.#ip               = props.ip
+    this.#createdAt        = props.createdAt
+    this.#expiresAt        = props.expiresAt
+    this.#upstreamResponse = props.upstreamResponse ?? null
   }
 
   /**
@@ -52,22 +54,24 @@ export class CapturedRequest {
    *   ip: string,
    *   now: Date,
    *   expiresAt: Date,
+   *   upstreamResponse?: object | null,
    * }} props
    */
   static create(props) {
     return new CapturedRequest({
-      id:          props.id,
-      inboxToken:  props.inboxToken,
-      method:      props.method,
-      path:        props.path,
-      query:       props.query,
-      headers:     props.headers,
-      body:        props.body,
-      contentType: props.contentType,
-      size:        props.size,
-      ip:          props.ip,
-      createdAt:   props.now,
-      expiresAt:   props.expiresAt,
+      id:               props.id,
+      inboxToken:       props.inboxToken,
+      method:           props.method,
+      path:             props.path,
+      query:            props.query,
+      headers:          props.headers,
+      body:             props.body,
+      contentType:      props.contentType,
+      size:             props.size,
+      ip:               props.ip,
+      createdAt:        props.now,
+      expiresAt:        props.expiresAt,
+      upstreamResponse: props.upstreamResponse ?? null,
     })
   }
 
@@ -76,34 +80,36 @@ export class CapturedRequest {
   /** Snapshot for persistence. */
   toDocument() {
     return {
-      _id:         this.#id,
-      inboxToken:  this.#inboxToken,
-      method:      this.#method,
-      path:        this.#path,
-      query:       this.#query,
-      headers:     this.#headers,
-      body:        this.#body,
-      contentType: this.#contentType,
-      size:        this.#size,
-      ip:          this.#ip,
-      createdAt:   this.#createdAt,
-      expiresAt:   this.#expiresAt,
+      _id:              this.#id,
+      inboxToken:       this.#inboxToken,
+      method:           this.#method,
+      path:             this.#path,
+      query:            this.#query,
+      headers:          this.#headers,
+      body:             this.#body,
+      contentType:      this.#contentType,
+      size:             this.#size,
+      ip:               this.#ip,
+      createdAt:        this.#createdAt,
+      expiresAt:        this.#expiresAt,
+      upstreamResponse: this.#upstreamResponse,
     }
   }
 
   /** Public DTO — strips persistence fields (inboxToken, expiresAt). */
   toDto() {
     return {
-      id:          this.#id.toString(),
-      method:      this.#method,
-      path:        this.#path,
-      query:       this.#query,
-      headers:     this.#headers,
-      body:        this.#body,
-      contentType: this.#contentType,
-      size:        this.#size,
-      ip:          this.#ip,
-      createdAt:   this.#createdAt,
+      id:               this.#id.toString(),
+      method:           this.#method,
+      path:             this.#path,
+      query:            this.#query,
+      headers:          this.#headers,
+      body:             this.#body,
+      contentType:      this.#contentType,
+      size:             this.#size,
+      ip:               this.#ip,
+      createdAt:        this.#createdAt,
+      upstreamResponse: this.#upstreamResponse,
     }
   }
 }

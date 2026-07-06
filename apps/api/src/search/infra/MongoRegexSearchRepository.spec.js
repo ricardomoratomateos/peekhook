@@ -154,16 +154,17 @@ describe('MongoRegexSearchRepository', () => {
     })
 
     expect(dtos[0]).toEqual({
-      id:          expect.any(String),
-      method:      expect.any(String),
-      path:        expect.any(String),
-      query:       expect.any(Object),
-      headers:     expect.any(Object),
-      body:        expect.any(String),
-      contentType: expect.any(String),
-      size:        expect.any(Number),
-      ip:          expect.any(String),
-      createdAt:   expect.any(Date),
+      id:               expect.any(String),
+      method:           expect.any(String),
+      path:             expect.any(String),
+      query:            expect.any(Object),
+      headers:          expect.any(Object),
+      body:             expect.any(String),
+      contentType:      expect.any(String),
+      size:             expect.any(Number),
+      ip:               expect.any(String),
+      createdAt:        expect.any(Date),
+      upstreamResponse: null,
     })
     expect(dtos[0].id).toMatch(/^[0-9a-f]{24}$/)
     expect(dtos[0]).not.toHaveProperty('inboxToken')
