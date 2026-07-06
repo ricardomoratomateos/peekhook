@@ -115,7 +115,7 @@ starting work; reorder freely when pull demands.
 13. **Share link (read-only)** *(small)*. Public URL for a
     single capture, no SSE, no inbox navigation. Useful in
     PR comments, Slack threads, bug reports.
-14. **Self-host docker-compose** *(medium)*. One container
+14. **Self-host docker-compose** *(medium)* ✓ shipped (`docker compose up` brings up mongo + api + web with healthchecks and SSE-friendly nginx). One container
     Mongo + API, web stays on Pages. For hobbyists and
     enterprise with data-residency requirements.
 
@@ -133,6 +133,10 @@ starting work; reorder freely when pull demands.
 - **Email inbound** (`xxx@peekhook.dev` → captured event).
   Demand is clear once a user explicitly asks. Cheap to add
   when the day comes.
+- v0.4: shipped #14 self-host docker-compose (one-command
+  bring-up of mongo + api + web with healthchecks and SPA-aware
+  nginx; verified end-to-end with a scripted POST round-trip
+  through the public-nginx → API chain).
 - **Tunnel-style capture-and-forward** (`/i/<token>` that
   also POSTs to a configured destination without an SSH
   agent on the user's box). Useful but adds state for a
