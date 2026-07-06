@@ -360,7 +360,7 @@ function InboxTab({
           type="button"
           onClick={() => setSearchOpen(o => !o)}
           className="sb-searchtoggle"
-          style={searchToggleBtn}
+          style={searchToggle}
           aria-label={searchOpen ? 'close search' : 'open search'}
           aria-expanded={searchOpen}
           title="search (regex or natural language)"
