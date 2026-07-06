@@ -14,6 +14,9 @@ import EmptyState from './components/EmptyState.jsx'
 import ConnectingState from './components/ConnectingState.jsx'
 import McpTokenCard from './components/McpTokenCard.jsx'
 import SchemaSparkline from './components/SchemaSparkline.jsx'
+import SearchBar from './components/SearchBar.jsx'
+import NotifyPermissionBanner from './components/NotifyPermissionBanner.jsx'
+import { useBrowserNotify, useCaptureNotifications } from './lib/useBrowserNotify.js'
 import './animations.css'
 
 export default function InspectorView() {
@@ -21,8 +24,11 @@ export default function InspectorView() {
   const { state } = useLocation()
   const inboxUrl = resolveInboxUrl(token, state)
   const mcpToken = resolveMcpToken(token, state)
+  const notify = useBrowserNotify()
+  useCaptureNotifications(notify.permission === 'granted')
 
   const [requests, setRequests] = useState([])
+  const [searchResults, setSearchResults] = useState(null)
   const [selectedId, setSelectedId] = useState(null)
   const [compareIds, setCompareIds] = useState([])
   const [showDiff, setShowDiff] = useState(false)
@@ -32,6 +38,8 @@ export default function InspectorView() {
   const [notFound, setNotFound] = useState(false)
   const [newIds, setNewIds] = useState(new Set())
   const newIdsRef = useRef(new Set())
+
+  const displayedRequests = searchResults ?? requests
 
   const [, setTick] = useState(0)
   useEffect(() => {
@@ -78,6 +86,7 @@ export default function InspectorView() {
     if (typeof EventSource !== 'undefined') {
       try {
         es = new EventSource(api.streamUrl(token))
+        if (typeof window !== 'undefined') window.__peekhookEventSource = es
         es.addEventListener('open', () => { sseConnected = true; if (!cancelled) setLiveStatus('live') })
         es.addEventListener('message', (evt) => {
           sseConnected = true
@@ -100,20 +109,26 @@ export default function InspectorView() {
 
     return () => {
       cancelled = true
-      if (es) { es.close(); es = null }
+      if (es) {
+        es.close()
+        if (typeof window !== 'undefined' && window.__peekhookEventSource === es) {
+          window.__peekhookEventSource = null
+        }
+        es = null
+      }
       clearInterval(pollTimer)
     }
   }, [token])
 
   useEffect(() => {
-    if (selectedId == null && requests.length > 0) setSelectedId(requests[0].id)
-  }, [requests, selectedId])
+    if (selectedId == null && displayedRequests.length > 0) setSelectedId(displayedRequests[0].id)
+  }, [displayedRequests, selectedId])
 
   useEffect(() => {
     setCompareIds(prev => prev.filter(id => requests.some(r => r.id === id)).slice(0, 2))
   }, [requests])
 
-  const selectedReq = requests.find(r => r.id === selectedId) || null
+  const selectedReq = displayedRequests.find(r => r.id === selectedId) || null
 
   function handleToggleCompare(req) {
     if (!req?.id) return
@@ -198,13 +213,29 @@ export default function InspectorView() {
 
         <ResponseConfigPanel token={token} />
 
+        <NotifyPermissionBanner
+          permission={notify.permission}
+          supported={notify.supported}
+          onEnable={notify.requestPermission}
+        />
+
+        <SearchBar
+          token={token}
+          onResults={setSearchResults}
+          onClear={() => setSearchResults(null)}
+        />
+
         <McpTokenCard mcpToken={mcpToken} inboxToken={token} />
 
         <SchemaSparkline token={token} />
 
         <div style={s.listHead}>
-          <span style={s.listHeadLabel}>requests</span>
-          {requests.length > 0 && <span style={s.listHeadCount}>{requests.length}</span>}
+          <span style={s.listHeadLabel}>
+            {searchResults ? 'search results' : 'requests'}
+          </span>
+          {displayedRequests.length > 0 && (
+            <span style={s.listHeadCount}>{displayedRequests.length}</span>
+          )}
         </div>
 
         {compareIds.length > 0 && (
@@ -254,19 +285,21 @@ export default function InspectorView() {
         )}
 
         <div style={s.listRows}>
-          {requests.length === 0 ? (
+          {displayedRequests.length === 0 ? (
             <div style={s.listEmpty}>
               <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: c.accent, animation: 'sbpulse 2s ease infinite' }} />
-              <span style={s.listEmptyText}>waiting for first request…</span>
+              <span style={s.listEmptyText}>
+                {searchResults ? 'no matches' : 'waiting for first request…'}
+              </span>
             </div>
           ) : (
-            requests.map(req => (
+            displayedRequests.map(req => (
               <RequestRow
                 key={req.id}
                 req={req}
                 token={token}
                 selected={req.id === selectedId}
-                isNew={newIds.has(req.id)}
+                isNew={!searchResults && newIds.has(req.id)}
                 compareSelected={compareIds.includes(req.id)}
                 onClick={() => setSelectedId(req.id === selectedId ? null : req.id)}
                 onToggleCompare={handleToggleCompare}
@@ -281,7 +314,7 @@ export default function InspectorView() {
         {showDiff && compareA && compareB
           ? <DiffPanel a={compareA} b={compareB} token={token} onBack={() => setShowDiff(false)} onClear={handleClearCompare} />
           : requests.length === 0
-            ? (liveStatus === 'connecting' ? <ConnectingState /> : <EmptyState inboxUrl={inboxUrl} onCopy={handleCopyTestRequest} />)
+            ? (liveStatus === 'connecting' ? <ConnectingState /> : <EmptyState inboxUrl={inboxUrl} onCopy={handleCopyTestRequest} token={token} />)
             : <DetailPanel req={selectedReq} token={token} />}
       </main>
     </div>

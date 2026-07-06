@@ -39,6 +39,20 @@ export const api = {
   regenerateMcpToken: (token) =>
     request(`/api/inboxes/${token}/regenerate-mcp`, { method: 'POST', body: '{}' }),
 
+  listFixtures: () => request('/api/fixtures'),
+
+  searchEvents: (token, { regex, field, limit, before }) => {
+    const params = new URLSearchParams()
+    if (regex) params.set('regex', regex)
+    if (field) params.set('field', field)
+    if (limit) params.set('limit', String(limit))
+    if (before) params.set('before', before)
+    return request(`/api/inboxes/${token}/requests/search?${params.toString()}`)
+  },
+
+  sendFixture: (token, fixtureId) =>
+    request(`/api/inboxes/${token}/fixtures/${fixtureId}`, { method: 'POST', body: '{}' }),
+
   replayEvent: (token, eventId) =>
     request(`/api/inboxes/${token}/replay`, {
       method: 'POST',
