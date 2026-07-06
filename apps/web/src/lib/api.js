@@ -38,4 +38,10 @@ export const api = {
 
   regenerateMcpToken: (token) =>
     request(`/api/inboxes/${token}/regenerate-mcp`, { method: 'POST', body: '{}' }),
+
+  replayEvent: (token, eventId) =>
+    request(`/api/inboxes/${token}/replay`, {
+      method: 'POST',
+      body: JSON.stringify({ eventId, mockOnly: true }),
+    }),
 }
