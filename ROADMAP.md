@@ -46,20 +46,20 @@ its weight against the curl-then-look-at-the-Inspector flow.
 
 ## Remaining to ship
 
-All 14 candidate features are now ✓ shipped end-to-end (or
-subsumed under #7 MCP for the implicit ones). Two net-new
-features remain as future scope:
+All 14 candidate features + 2 net-new features (NL search,
+share link) are now ✓ shipped end-to-end. The original 16-item
+plan is complete. Future work is open-ended:
 
-### New endpoints + UI needed
+### Optional polish
 
-- **#10 Natural-language search** *(medium)* — small backend
-  NL-to-regex parser (e.g. "show me stripe events over $50")
-  over the existing search endpoint + inspector input bar
-  that exposes the parser with NLP-style examples.
-- **#13 Share link (read-only)** *(small)* — new GET endpoint
-  returning a single capture DTO + a frontend share button
-  that copies a `peekhook.dev/c/<id>` URL with no auth.
-  Useful for PR comments, Slack threads, bug reports.
+- NL parser v2: route provider mentions to field-shape
+  fingerprints (the same logic that powers #8 explain_event)
+  so "stripe events" matches Stripe bodies even when the body
+  text doesn't contain the word "stripe".
+- Frontend tests (Vitest + jsdom) — currently 0 tests in
+  `apps/web`. The 11 inspector components are not covered.
+- Deploy to fly.io + Cloudflare Pages with DNS.
+- Buy `peekhook.dev` on Porkbun ($1.11/yr).
 
 ### Deferred to "won't build until demand"
 
@@ -121,7 +121,7 @@ starting work; reorder freely when pull demands.
 9. **Schema-drift callouts** *(small)* ✓ shipped (chip on DetailPanel showing `+N new since capture` with tooltip listing the specific new paths; walks the request's body via the same path rules as PayloadSignature). "3 of the last 5
    events have a new field X" surfaced as a badge on the
    request detail panel and as an MCP resource.
-10. **Natural-language search** *(medium)*. "show me stripe
+10. **Natural-language search** *(medium)* ✓ shipped (heuristic parser in lib/nlParse.js recognizes provider + amount + field hints; SearchBar shows examples row + 'translated to' hint). "show me stripe
     events with amount > 100" parsed into a Mongo query, with
     confidence-sourced prompts when ambiguity is high. UI bar
     + MCP tool.
@@ -138,7 +138,7 @@ starting work; reorder freely when pull demands.
     naming the risk in plain language. No code path that lets
     an anonymous inbox re-send a modified payload to the
     open internet.
-13. **Share link (read-only)** *(small)*. Public URL for a
+13. **Share link (read-only)** *(small)* ✓ shipped (GET /api/requests/:id public endpoint + /c/:id SPA route + SharedCaptureView read-only chrome + share button on DetailPanel that copies `${origin}/c/{id}` to clipboard). Public URL for a
     single capture, no SSE, no inbox navigation. Useful in
     PR comments, Slack threads, bug reports.
 14. **Self-host docker-compose** *(medium)* ✓ shipped (`docker compose up` brings up mongo + api + web with healthchecks and SSE-friendly nginx). One container
