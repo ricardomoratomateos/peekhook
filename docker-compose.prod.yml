@@ -14,6 +14,9 @@ services:
       TRUST_PROXY: ${TRUST_PROXY}
     expose:
       - "3000"
+    networks:
+      - default
+      - coolify
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/health | grep -q ok"]
       interval: 10s
