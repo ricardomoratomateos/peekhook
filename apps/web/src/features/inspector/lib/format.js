@@ -72,3 +72,49 @@ export function buildTestCurl(inboxUrl) {
   -w "\\nHTTP %{http_code}\\n" \\
   -d '{"event":"test","hello":"world"}'`
 }
+
+function rawBody(body, contentType) {
+  if (body == null) return ''
+  if (typeof body === 'string') return body
+  if (typeof body === 'object') {
+    try { return JSON.stringify(body) } catch (_) { return '' }
+  }
+  return String(body)
+}
+
+export function buildRequestCurl(req, fullUrl) {
+  if (!req) return ''
+  const method = (req.method || 'GET').toUpperCase()
+  const url = fullUrl || req.path || ''
+  const headers = req.headers && typeof req.headers === 'object' ? req.headers : {}
+  const ct = req.contentType || headers['content-type'] || headers['Content-Type'] || ''
+  const lines = [`curl -s -X ${method} ${url}`]
+  for (const [k, v] of Object.entries(headers)) {
+    if (k.toLowerCase() === 'host') continue
+    const escaped = String(v).replace(/'/g, "'\\''")
+    lines.push(`  -H '${k}: ${escaped}'`)
+  }
+  const body = rawBody(req.body, ct)
+  if (body) {
+    const escaped = body.replace(/'/g, "'\\''")
+    lines.push(`  -d '${escaped}'`)
+  }
+  return lines.join(' \\\n')
+}
+
+export function buildRawHttp(req, fullUrl) {
+  if (!req) return ''
+  const method = (req.method || 'GET').toUpperCase()
+  const url = fullUrl || req.path || ''
+  const headers = req.headers && typeof req.headers === 'object' ? req.headers : {}
+  const ct = req.contentType || headers['content-type'] || headers['Content-Type'] || ''
+  const lines = [`${method} ${url} HTTP/1.1`]
+  for (const [k, v] of Object.entries(headers)) {
+    lines.push(`${k}: ${v}`)
+  }
+  const body = rawBody(req.body, ct)
+  if (body) {
+    lines.push('', body)
+  }
+  return lines.join('\n')
+}

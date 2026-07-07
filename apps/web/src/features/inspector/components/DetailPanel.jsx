@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
 import { c } from '../lib/tokens.js'
-import { methodTone, formatBody, formatSize, prettyPath, timeAgo } from '../lib/format.js'
+import { methodTone, formatBody, formatSize, prettyPath, timeAgo, buildRequestCurl } from '../lib/format.js'
 import KVTable from './KVTable.jsx'
 import Meta from './Meta.jsx'
+import { CopyIconButton, useCopy } from './CopyButton.jsx'
 import { d, fr } from '../styles.js'
 import { api } from '../../../lib/api.js'
 
@@ -84,6 +85,7 @@ export default function DetailPanel({ req, token }) {
   const [replayed, setReplayed] = useState(null)
   const [replayError, setReplayError] = useState(null)
   const [shareState, setShareState] = useState('idle')
+  const [curlState, copyCurl] = useCopy()
 
   useEffect(() => {
     if (!token) return
@@ -100,6 +102,16 @@ export default function DetailPanel({ req, token }) {
     setReplayError(null)
     setShareState('idle')
   }, [req?.id])
+
+  function buildCurl() {
+    if (!req) return ''
+    const origin = typeof window !== 'undefined' && window.location?.origin
+      ? window.location.origin
+      : ''
+    const path = req.path || ''
+    const fullUrl = path.startsWith('http') ? path : `${origin}${path}`
+    return buildRequestCurl(req, fullUrl)
+  }
 
   if (!req) {
     return (
@@ -214,6 +226,18 @@ export default function DetailPanel({ req, token }) {
               : 'share'
             }</span>
           </button>
+          <button
+            type="button"
+            onClick={() => copyCurl(buildCurl)}
+            className="sb-copy-curl"
+            style={shareBtn}
+            aria-label={curlState === 'done' ? 'curl copied' : 'copy as curl'}
+          >
+            <span className="material-symbols-outlined" style={{ fontSize: '13px' }}>
+              {curlState === 'done' ? 'check' : 'terminal'}
+            </span>
+            <span>{curlState === 'done' ? 'curl copied' : 'copy curl'}</span>
+          </button>
           <span style={d.timestamp}>{new Date(req.createdAt).toISOString().replace('T', ' ').slice(0, 19)}</span>
         </div>
       </div>
@@ -246,16 +270,33 @@ export default function DetailPanel({ req, token }) {
       <div style={d.scroll}>
         {queryRows.length > 0 && (
           <section style={d.section}>
-            <div style={d.sectionTitle}>query params</div>
+            <SectionTitle label="query params">
+              <CopyIconButton
+                getText={() => queryRows.map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : v}`).join('\n')}
+                label="copy query"
+              />
+            </SectionTitle>
             <KVTable rows={queryRows} />
           </section>
         )}
         <section style={d.section}>
-          <div style={d.sectionTitle}>headers</div>
+          <SectionTitle label="headers">
+            <CopyIconButton
+              getText={() => headerRows.map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : v}`).join('\n')}
+              label="copy headers"
+            />
+          </SectionTitle>
           <KVTable rows={headerRows} />
         </section>
         <section style={{ ...d.section, flex: 1, display: 'flex', flexDirection: 'column', borderBottom: 'none' }}>
-          <div style={d.sectionTitle}>body</div>
+          <SectionTitle label="body">
+            {bodyText && (
+              <CopyIconButton
+                getText={() => bodyText}
+                label="copy body"
+              />
+            )}
+          </SectionTitle>
           {bodyText
             ? <pre style={d.bodyPre}>{bodyText}</pre>
             : <span style={{ fontSize: '12px', color: c.faint }}>empty body</span>}
@@ -298,6 +339,15 @@ function ForwardedSection({ upstream }) {
       {upstream.headers && Object.keys(upstream.headers).length > 0 && (
         <KVTable rows={Object.entries(upstream.headers)} />
       )}
+    </div>
+  )
+}
+
+function SectionTitle({ label, children }) {
+  return (
+    <div style={sectionTitleRow}>
+      <span style={{ ...d.sectionTitle, marginBottom: 0 }}>{label}</span>
+      {children}
     </div>
   )
 }
@@ -390,4 +440,9 @@ const driftChip = {
   letterSpacing: '0.04em',
   flexShrink: 0,
   cursor: 'help',
+}
+
+const sectionTitleRow = {
+  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+  gap: '10px', marginBottom: '12px',
 }
