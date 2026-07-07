@@ -20,6 +20,7 @@ CMD ["npm", "run", "dev"]
 FROM node:20-alpine AS build
 
 ARG VITE_API_URL=""
+ARG VITE_WEB_URL=""
 
 WORKDIR /app
 
@@ -32,6 +33,7 @@ COPY apps/web ./apps/web
 
 WORKDIR /app/apps/web
 ENV VITE_API_URL=$VITE_API_URL
+ENV VITE_WEB_URL=$VITE_WEB_URL
 RUN node /app/node_modules/vite/bin/vite.js build
 
 FROM nginx:1.27-alpine

@@ -27,6 +27,7 @@ services:
       dockerfile: apps/web/Dockerfile
       args:
         VITE_API_URL: ""
+        VITE_WEB_URL: ${WEB_URL}
     container_name: peekhook-web
     restart: unless-stopped
     depends_on:

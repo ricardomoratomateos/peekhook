@@ -21,8 +21,10 @@ const c = {
   mono: "'Geist Mono', ui-monospace, 'SFMono-Regular', monospace",
 }
 
-const PLACEHOLDER_URL = 'https://peekhook.dev/mcp'
+const SITE_URL = (import.meta.env.VITE_WEB_URL || '').replace(/\/$/, '') || 'https://peekhook.dev'
+const PLACEHOLDER_URL = `${SITE_URL}/mcp`
 const PLACEHOLDER_TOKEN = '<paste-your-mcp-token>'
+const GITHUB_URL = 'https://github.com/ricardomoratomatemateos/peekhook'
 
 const SNIPPETS = {
   'claude code': {
@@ -463,11 +465,7 @@ export default function SandboxEntry() {
               {status === 'loading' ? 'generating…' : 'open an inbox →'}
             </button>
             <div style={s.finalCtaLinks}>
-              <a href="#" className="sb-link" style={s.finalCtaLink} target="_blank" rel="noreferrer">docs</a>
-              <span style={s.finalCtaDot}>·</span>
-              <a href="#" className="sb-link" style={s.finalCtaLink} target="_blank" rel="noreferrer">status</a>
-              <span style={s.finalCtaDot}>·</span>
-              <a href="https://github.com/" className="sb-link" style={s.finalCtaLink} target="_blank" rel="noreferrer">github</a>
+              <a href={GITHUB_URL} className="sb-link" style={s.finalCtaLink} target="_blank" rel="noreferrer">github</a>
             </div>
           </div>
         </section>
@@ -483,18 +481,11 @@ export default function SandboxEntry() {
                 <div style={s.footerColHead}>product</div>
                 <Link to="/" className="sb-link" style={s.footerLink}>inbox</Link>
                 <a href="#mcp" className="sb-link" style={s.footerLink}>mcp / agents</a>
-                <a href="https://peekhook.dev" className="sb-link" style={s.footerLink} target="_blank" rel="noreferrer">live site</a>
+                <a href={SITE_URL} className="sb-link" style={s.footerLink} target="_blank" rel="noreferrer">live site</a>
               </div>
               <div style={s.footerCol}>
                 <div style={s.footerColHead}>resources</div>
-                <a href="https://github.com/" className="sb-link" style={s.footerLink} target="_blank" rel="noreferrer">github</a>
-                <a href="#" className="sb-link" style={s.footerLink} target="_blank" rel="noreferrer">status</a>
-                <a href="#" className="sb-link" style={s.footerLink} target="_blank" rel="noreferrer">changelog</a>
-              </div>
-              <div style={s.footerCol}>
-                <div style={s.footerColHead}>legal</div>
-                <a href="#" className="sb-link" style={s.footerLink} target="_blank" rel="noreferrer">terms</a>
-                <a href="#" className="sb-link" style={s.footerLink} target="_blank" rel="noreferrer">privacy</a>
+                <a href={GITHUB_URL} className="sb-link" style={s.footerLink} target="_blank" rel="noreferrer">github</a>
               </div>
             </div>
           </div>
