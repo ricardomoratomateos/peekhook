@@ -3,7 +3,10 @@ import { getDb } from '../../shared/db.js'
 import { MongoMcpAuthRepository } from './MongoMcpAuthRepository.js'
 import { MongoRequestListReadModel } from '../../inbox/infra/persistence/MongoRequestListReadModel.js'
 import { MongoRequestSearchReadModel } from './MongoRequestSearchReadModel.js'
+import { MongoMcpAuditLog } from './persistence/MongoMcpAuditLog.js'
+import { InMemoryMcpRateLimiter } from './InMemoryMcpRateLimiter.js'
 import { provideTools } from './provideTools.js'
+import { sanitizeParamsForAudit } from '../app/SafeResponse.js'
 
 /**
  * mcp.http.js — Streamable HTTP transport for the Model Context Protocol.
@@ -12,9 +15,8 @@ import { provideTools } from './provideTools.js'
  * Speaks JSON-RPC 2.0 over HTTP, the same wire protocol that stdio
  * MCP servers use, but addressed by URL + Bearer token instead of
  * stdin/stdout subprocess. Backed by the same Mongo repos the rest
- * of the API uses — no new storage, no new process. Tools are the
- * exact same handlers (list_events / get_event / search_events /
- * diff_events / explain_event) that the previous stdio server wired.
+ * of the API uses — no new storage, no new process (apart from the
+ * `mcp_audit_log` collection, which is append-only and best-effort).
  *
  * Auth: `Authorization: Bearer <mcp_token>`. The plaintext token is
  * hashed (SHA-256 hex) and looked up in the existing `inboxes`
@@ -30,6 +32,19 @@ import { provideTools } from './provideTools.js'
  *     local Claude / Cursor / Cline clients usable without extra
  *     config.
  *
+ * Security (PeekHook additions, applied to the MCP layer):
+ *   - Per-token rate limit: 10 calls / 60s, sliding window, keyed on
+ *     the SHA-256 hash of the bearer token. Exceeded calls return
+ *     429 + `Retry-After: <seconds>`. The limit is checked AFTER auth
+ *     and BEFORE tool dispatch — rate-limited calls do not touch
+ *     the read models or use cases.
+ *   - Audit log: every authenticated `tools/call` is appended to
+ *     `mcp_audit_log` with `{ tokenHash, tool, params, ip, timestamp }`.
+ *     Params are size-capped (any string > 1 KB → `{ length }` shape)
+ *     so an attacker cannot stash a payload in a tool argument. The
+ *     write is best-effort: a Mongo failure logs to stderr and the
+ *     MCP call still succeeds.
+ *
  * Lifecycle: `initialize` returns a minimal handshake result; client
  * `notifications/initialized` returns 202. The session itself is
  * stateless — every request is independent and re-authenticates via
@@ -40,15 +55,22 @@ import { provideTools } from './provideTools.js'
  * -32600 invalid request, -32601 method not found, -32602 invalid
  * params, -32603 internal error, -32000 tool execution, -32001 auth).
  * 4xx is reserved for transport-level issues (auth, bad accept
- * header).
+ * header, rate-limit).
  *
  * @param {import('fastify').FastifyInstance} fastify
+ * @param {{
+ *   rateLimiter?: import('../domain/McpRateLimiter.js').McpRateLimiter,
+ *   auditLog?:    import('../domain/McpAuditLog.js').McpAuditLog,
+ * }} [deps] Optional injection for tests. Production wires defaults.
  */
-export async function registerMcpRoutes(fastify) {
+export async function registerMcpRoutes(fastify, deps = {}) {
   const allowedOrigin = (() => {
     const fromEnv = process.env.WEB_URL || 'http://localhost:5173'
     try { return new URL(fromEnv).origin } catch { return null }
   })()
+
+  const rateLimiter = deps.rateLimiter ?? new InMemoryMcpRateLimiter()
+  const auditLog    = deps.auditLog    ?? new MongoMcpAuditLog(getDb())
 
   fastify.addContentTypeParser('application/json', { parseAs: 'string' }, (_req, body, done) => {
     done(null, body)
@@ -107,6 +129,21 @@ export async function registerMcpRoutes(fastify) {
         .send({ jsonrpc: '2.0', id, error: { code: -32001, message: auth.reason } })
     }
 
+    // Per-token rate limit. Keyed on the SHA-256 hash so the plaintext
+    // token never reaches the limiter. Applied BEFORE tool dispatch so
+    // a denied call does not touch the read models or use cases.
+    const limited = await rateLimiter.tryConsume({ tokenHash: auth.tokenHash })
+    if (!limited.allowed) {
+      return reply
+        .code(429)
+        .header('Retry-After', String(limited.retryAfterSec))
+        .header('X-RateLimit-Reset', String(limited.retryAfterSec))
+        .send({
+          jsonrpc: '2.0', id,
+          error: { code: -32002, message: `rate limit exceeded; retry in ${limited.retryAfterSec}s` },
+        })
+    }
+
     const db          = getDb()
     const readModel   = new MongoRequestListReadModel(db)
     const searchModel = new MongoRequestSearchReadModel(db)
@@ -136,6 +173,24 @@ export async function registerMcpRoutes(fastify) {
           jsonrpc: '2.0', id, error: { code: -32602, message: 'params.name is required' },
         })
       }
+
+      // Best-effort audit. Captures the intent before execution; a
+      // tool failure still leaves a row in the audit log. A failing
+      // audit must NEVER fail the MCP call — even if the
+      // implementation forgets to swallow (e.g. a custom in-memory
+      // stub that throws), the transport catches and proceeds.
+      try {
+        await auditLog.append({
+          tokenHash: auth.tokenHash,
+          tool:      name,
+          params:    sanitizeParamsForAudit(args),
+          ip:        request.ip,
+          timestamp: new Date(),
+        })
+      } catch (auditErr) {
+        request.log.warn({ err: auditErr && auditErr.message }, 'mcp audit log write failed')
+      }
+
       try {
         const result = await surface.callTool(name, args, { inboxToken: auth.inboxToken })
         return reply.send({ jsonrpc: '2.0', id, result: wrapToolResult(result) })
@@ -183,10 +238,12 @@ function originAllowed(origin, configured) {
 
 /**
  * Resolve `Authorization: Bearer <token>` into the inbox that owns
- * this mcp_token. Returns `{ ok: true, inboxToken }` on success or
- * `{ ok: false, reason }` on every failure mode (missing header,
- * malformed header, unknown token). Hashed once on the request path
- * so the plaintext never leaves the inbound boundary.
+ * this mcp_token. Returns `{ ok: true, inboxToken, tokenHash }` on
+ * success or `{ ok: false, reason }` on every failure mode (missing
+ * header, malformed header, unknown token). Hashed once on the
+ * request path so the plaintext never leaves the inbound boundary.
+ * `tokenHash` is the key used by both the rate limiter and the audit
+ * log — neither ever sees the plaintext.
  */
 async function resolveAuth(authorizationHeader) {
   if (typeof authorizationHeader !== 'string' || authorizationHeader.length === 0) {
@@ -202,7 +259,7 @@ async function resolveAuth(authorizationHeader) {
   const inbox   = await repo.findByMcpTokenHash(hashHex)
   if (!inbox) return { ok: false, reason: 'invalid token' }
   if (!inbox.token) return { ok: false, reason: 'token resolves to an inbox without an id' }
-  return { ok: true, inboxToken: inbox.token }
+  return { ok: true, inboxToken: inbox.token, tokenHash: hashHex }
 }
 
 /**
