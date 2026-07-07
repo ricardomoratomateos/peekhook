@@ -1,20 +1,15 @@
 import { useState, useEffect } from 'react'
+import { Link, useSearchParams } from 'react-router-dom'
 import { c, GRAIN } from '../lib/tokens.js'
-import { s } from '../styles.js'
+import { s, d, fr } from '../styles.js'
 import { api } from '../../../lib/api.js'
-
-function formatBody(body, contentType) {
-  if (body == null || body === '') return null
-  const ct = (contentType || '').toLowerCase()
-  if (ct.includes('json')) {
-    if (typeof body === 'object') return JSON.stringify(body, null, 2)
-    try { return JSON.stringify(JSON.parse(body), null, 2) } catch (_) {}
-  }
-  if (typeof body === 'object') return JSON.stringify(body, null, 2)
-  return String(body)
-}
+import { methodTone, formatBody, formatSize, prettyPath, timeAgo } from '../lib/format.js'
+import KVTable from './KVTable.jsx'
+import Meta from './Meta.jsx'
 
 export default function SharedCaptureView({ id }) {
+  const [params] = useSearchParams()
+  const token = params.get('token') || ''
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -24,16 +19,17 @@ export default function SharedCaptureView({ id }) {
     let cancelled = false
     setLoading(true)
     setError(null)
-    api.getSharedRequest(id)
+    if (!token) {
+      setError('token required')
+      setLoading(false)
+      return () => { cancelled = true }
+    }
+    api.getSharedRequest(id, token)
       .then(d => { if (!cancelled) setData(d) })
       .catch(err => { if (!cancelled) setError(err.message || 'not found') })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
-  }, [id])
-
-  const bodyText = data ? formatBody(data.body, data.contentType) : null
-  const queryRows = data && data.query && typeof data.query === 'object' ? Object.entries(data.query) : []
-  const headerRows = data && data.headers ? Object.entries(data.headers) : []
+  }, [id, token])
 
   async function handleCopy() {
     try { await navigator.clipboard.writeText(window.location.href) } catch (_) {}
@@ -41,10 +37,15 @@ export default function SharedCaptureView({ id }) {
     setTimeout(() => setCopied(false), 2000)
   }
 
+  const logo = (
+    <Link to="/" className="sb-link" style={s.railLogo} aria-label="peekhook home">p</Link>
+  )
+
   if (loading) {
     return (
       <div style={s.shell}>
         <div style={{ ...s.grain, backgroundImage: `url("${GRAIN}")` }} aria-hidden />
+        <aside style={s.rail} aria-label="peekhook">{logo}</aside>
         <div style={center}>
           <p style={centerMsg}>loading capture {id}…</p>
         </div>
@@ -56,91 +57,142 @@ export default function SharedCaptureView({ id }) {
     return (
       <div style={s.shell}>
         <div style={{ ...s.grain, backgroundImage: `url("${GRAIN}")` }} aria-hidden />
+        <aside style={s.rail} aria-label="peekhook">{logo}</aside>
         <div style={notFound}>
-          <div style={nfCode}>404</div>
-          <p style={nfTitle}>capture not found</p>
-          <p style={nfSub}>
+          <div style={notFoundCode}>404</div>
+          <p style={notFoundTitle}>capture not found</p>
+          <p style={notFoundSub}>
             {error ? `error: ${error}` : 'this capture has been deleted, expired, or never existed.'}
           </p>
+          <Link to="/" style={notFoundBtn}>get a new inbox</Link>
         </div>
       </div>
     )
   }
 
+  const t = methodTone(data.method)
+  const bodyText = formatBody(data.body, data.contentType)
+  const queryRows = data.query && typeof data.query === 'object' ? Object.entries(data.query) : []
+  const headerRows = data.headers ? Object.entries(data.headers) : []
+  const timestamp = new Date(data.createdAt).toISOString().replace('T', ' ').slice(0, 19)
+  const prettyP = prettyPath(data.path, token) || '/'
+
   return (
     <div style={s.shell}>
       <div style={{ ...s.grain, backgroundImage: `url("${GRAIN}")` }} aria-hidden />
-      <div style={topBar}>
-        <div style={logo}>peekhook</div>
-        <div style={shareBox}>
-          <span style={shareUrl}>{window.location.host}{window.location.pathname}</span>
-          <button type="button" onClick={handleCopy} className="sb-copy" style={shareCopyBtn}>
-            <span className="material-symbols-outlined" style={{ fontSize: '13px' }}>
-              {copied ? 'check' : 'content_copy'}
-            </span>
-            <span>{copied ? 'copied' : 'copy link'}</span>
-          </button>
-        </div>
-      </div>
 
-      <div style={content}>
-        <div style={headerCard}>
-          <div style={eyebrow}>shared capture · read-only</div>
-          <div style={methodRow}>
-            <span style={methodChip}>{data.method?.toLowerCase() || '?'}</span>
-            <span style={pathText}>{data.path}</span>
+      <aside style={s.rail} aria-label="peekhook">{logo}</aside>
+
+      <div style={s.page}>
+        <header style={s.pageHeader}>
+          <div style={d.eyebrow}>read-only · shared capture · {timeAgo(data.createdAt)}</div>
+          <div style={s.pageHeaderRow}>
+            <div style={d.headlineRow}>
+              <span style={{ ...d.methodLg, color: t.color, fontWeight: t.weight }}>
+                {(data.method || '?').toLowerCase()}
+              </span>
+              <span style={d.pathLg} title={data.path}>{prettyP}</span>
+            </div>
+            <div style={s.pageHeaderRight}>
+              <button
+                type="button"
+                onClick={handleCopy}
+                className="sb-share"
+                style={shareBtn}
+                aria-label={copied ? 'Link copied' : 'Copy share link'}
+              >
+                <span className="material-symbols-outlined" style={{ fontSize: '13px' }}>
+                  {copied ? 'check' : 'link'}
+                </span>
+                <span>{copied ? 'link copied' : 'copy link'}</span>
+              </button>
+              <span style={d.timestamp}>{timestamp}</span>
+            </div>
           </div>
-          <div style={timestampText}>
-            {new Date(data.createdAt).toISOString().replace('T', ' ').slice(0, 19)} UTC
+        </header>
+
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' }}>
+          <div style={d.meta}>
+            {data.ip && <Meta label="ip" value={data.ip} />}
+            {data.contentType && <Meta label="content-type" value={data.contentType} />}
+            {data.size != null && <Meta label="size" value={formatSize(data.size)} />}
+          </div>
+
+          <div style={d.scroll}>
+            {queryRows.length > 0 && (
+              <section style={d.section}>
+                <div style={d.sectionTitle}>query params</div>
+                <KVTable rows={queryRows} />
+              </section>
+            )}
+            <section style={d.section}>
+              <div style={d.sectionTitle}>headers</div>
+              <KVTable rows={headerRows} />
+            </section>
+            <section style={{ ...d.section, flex: 1, display: 'flex', flexDirection: 'column', borderBottom: 'none' }}>
+              <div style={d.sectionTitle}>body</div>
+              {bodyText
+                ? <pre style={d.bodyPre}>{bodyText}</pre>
+                : <span style={{ fontSize: '12px', color: c.faint }}>empty body</span>}
+            </section>
+            {data.upstreamResponse && (
+              <section style={d.section}>
+                <div style={d.sectionTitle}>forwarded response</div>
+                <ForwardedSection upstream={data.upstreamResponse} />
+              </section>
+            )}
           </div>
         </div>
-
-        {queryRows.length > 0 && (
-          <section style={section}>
-            <div style={sectionTitle}>query params</div>
-            <table style={table}>
-              <tbody>
-                {queryRows.map(([k, v]) => (
-                  <tr key={k} style={tr}>
-                    <td style={tdKey}>{k}</td>
-                    <td style={tdVal}>{Array.isArray(v) ? v.join(', ') : String(v)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </section>
-        )}
-
-        <section style={section}>
-          <div style={sectionTitle}>headers</div>
-          <table style={table}>
-            <tbody>
-              {headerRows.map(([k, v]) => (
-                <tr key={k} style={tr}>
-                  <td style={tdKey}>{k}</td>
-                  <td style={tdVal}>{Array.isArray(v) ? v.join(', ') : String(v)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </section>
-
-        <section style={section}>
-          <div style={sectionTitle}>body</div>
-          {bodyText
-            ? <pre style={pre}>{bodyText}</pre>
-            : <span style={emptyBody}>empty body</span>}
-        </section>
       </div>
     </div>
   )
 }
 
+function ForwardedSection({ upstream }) {
+  const err = upstream && upstream.error
+  const statusChip = err
+    ? <span style={fr.statusErr}>{upstream.error}</span>
+    : <span style={fr.statusOk}>{upstream.status}</span>
+
+  return (
+    <div style={fr.section}>
+      <div style={fr.statusRow}>
+        {statusChip}
+        {upstream.contentType && <span style={fr.pill}>{upstream.contentType}</span>}
+        {typeof upstream.durationMs === 'number' && <span style={fr.pill}>{upstream.durationMs}ms</span>}
+      </div>
+      {err ? (
+        <pre style={fr.pre}>{upstream.message || upstream.error}</pre>
+      ) : upstream.body ? (
+        <pre style={fr.pre}>{formatBody(upstream.body, upstream.contentType) || upstream.body}</pre>
+      ) : (
+        <span style={{ fontSize: '12px', color: c.faint, fontFamily: c.mono }}>empty body</span>
+      )}
+      {upstream.headers && Object.keys(upstream.headers).length > 0 && (
+        <KVTable rows={Object.entries(upstream.headers)} />
+      )}
+    </div>
+  )
+}
+
+const shareBtn = {
+  display: 'inline-flex', alignItems: 'center', gap: '5px',
+  background: 'transparent',
+  border: `1px solid ${c.border}`,
+  borderRadius: '5px',
+  padding: '5px 9px',
+  fontFamily: c.mono,
+  fontSize: '11px',
+  color: c.dim,
+  cursor: 'pointer',
+  letterSpacing: '0.04em',
+}
+
 const center = {
   position: 'relative', zIndex: 1,
-  display: 'flex', alignItems: 'center', justifyContent: 'center',
-  height: '100vh',
+  flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
 }
+
 const centerMsg = {
   fontFamily: c.mono, fontSize: '12px', color: c.faint,
   letterSpacing: '0.1em', textTransform: 'uppercase',
@@ -148,98 +200,17 @@ const centerMsg = {
 
 const notFound = {
   position: 'relative', zIndex: 1,
-  display: 'flex', flexDirection: 'column', alignItems: 'flex-start',
-  gap: '8px', maxWidth: '400px', padding: '32px',
-  margin: '0 auto', marginTop: '20vh',
-}
-const nfCode = { fontFamily: c.mono, fontSize: '12px', color: c.faint, letterSpacing: '0.2em' }
-const nfTitle = { fontSize: '22px', fontWeight: 500, color: c.fg }
-const nfSub = { fontSize: '13px', color: c.dim, lineHeight: 1.6 }
-
-const topBar = {
-  position: 'relative', zIndex: 1,
-  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-  padding: '20px 32px',
-  borderBottom: `1px solid ${c.borderSoft}`,
-}
-const logo = {
-  fontFamily: c.sans, fontSize: '22px', fontWeight: 500,
-  letterSpacing: '-0.7px', color: c.fg,
-  textDecoration: 'none',
-}
-const shareBox = {
-  display: 'flex', alignItems: 'center',
-  border: `1px solid ${c.border}`, borderRadius: '4px',
-  overflow: 'hidden', background: c.bg,
-}
-const shareUrl = {
-  fontFamily: c.mono, fontSize: '10px', color: c.dim,
-  padding: '6px 10px', maxWidth: '300px',
-  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-}
-const shareCopyBtn = {
-  display: 'flex', alignItems: 'center', gap: '4px',
-  background: c.ctr, border: 'none', borderLeft: `1px solid ${c.border}`,
-  color: c.dim, padding: '6px 10px', cursor: 'pointer',
-  fontFamily: c.sans, fontSize: '11px',
+  flex: 1, display: 'flex', flexDirection: 'column',
+  alignItems: 'flex-start', justifyContent: 'center',
+  gap: '10px', padding: '40px', maxWidth: '480px',
 }
 
-const content = {
-  position: 'relative', zIndex: 1,
-  maxWidth: '780px', margin: '0 auto', padding: '24px 32px 80px',
+const notFoundCode = { fontFamily: c.mono, fontSize: '12px', color: c.faint, letterSpacing: '0.2em' }
+const notFoundTitle = { fontSize: '22px', fontWeight: 500, color: c.fg }
+const notFoundSub = { fontSize: '13.5px', color: c.dim, lineHeight: 1.6 }
+const notFoundBtn = {
+  marginTop: '10px', padding: '10px 18px',
+  fontFamily: c.sans, fontWeight: 500, fontSize: '13px',
+  color: c.accentInk, borderRadius: '4px',
+  textDecoration: 'none', background: c.accent,
 }
-
-const headerCard = {
-  border: `1px solid ${c.border}`,
-  borderRadius: '6px',
-  background: c.low,
-  padding: '16px 18px',
-  marginBottom: '16px',
-}
-const eyebrow = {
-  fontFamily: c.mono, fontSize: '10px', color: c.faint,
-  letterSpacing: '0.2em', textTransform: 'uppercase',
-  marginBottom: '8px',
-}
-const methodRow = {
-  display: 'flex', alignItems: 'baseline', gap: '12px', flexWrap: 'wrap',
-  marginBottom: '6px',
-}
-const methodChip = {
-  display: 'inline-block', padding: '2px 6px', borderRadius: '4px',
-  border: `1px solid ${c.border}`, color: c.fg, fontWeight: 500,
-  fontSize: '10px', letterSpacing: '0.04em', flexShrink: 0,
-  fontFamily: c.mono,
-}
-const pathText = {
-  fontSize: '17px', color: c.fg, fontWeight: 500,
-  fontFamily: c.mono, letterSpacing: '-0.3px',
-  wordBreak: 'break-all', minWidth: 0,
-}
-const timestampText = {
-  fontFamily: c.mono, fontSize: '10px', color: c.faint,
-}
-
-const section = {
-  padding: '14px 18px', borderBottom: `1px solid ${c.borderSoft}`,
-  background: c.bg, borderRadius: '6px', marginBottom: '6px',
-}
-const sectionTitle = {
-  fontFamily: c.mono, fontSize: '10px', color: c.faint,
-  letterSpacing: '0.2em', textTransform: 'uppercase', marginBottom: '10px',
-}
-const table = { width: '100%', borderCollapse: 'collapse', fontSize: '12px' }
-const tr = { borderBottom: `1px solid ${c.borderSoft}` }
-const tdKey = {
-  fontFamily: c.mono, color: c.faint, width: '38%', verticalAlign: 'top',
-  padding: '5px 12px 5px 0', whiteSpace: 'nowrap',
-}
-const tdVal = { fontFamily: c.mono, color: c.dim, wordBreak: 'break-all', padding: '5px 0' }
-const pre = {
-  background: c.lowest, border: `1px solid ${c.border}`,
-  borderRadius: '4px', padding: '12px',
-  fontSize: '12px', color: c.fg, fontFamily: c.mono,
-  overflowX: 'auto', lineHeight: 1.6, whiteSpace: 'pre-wrap',
-  wordBreak: 'break-word', margin: 0,
-}
-const emptyBody = { fontSize: '12px', color: c.faint }

@@ -50,7 +50,8 @@ export const api = {
 
   getSchemaHistory: (token) => request(`/api/inboxes/${token}/schema-history`),
 
-  getSharedRequest: (id) => request(`/api/requests/${id}`),
+  getSharedRequest: (id, token) =>
+    request(`/api/requests/${id}${token ? `?token=${encodeURIComponent(token)}` : ''}`),
 
   regenerateMcpToken: (token) =>
     request(`/api/inboxes/${token}/regenerate-mcp`, { method: 'POST', body: '{}' }),
@@ -73,5 +74,11 @@ export const api = {
     request(`/api/inboxes/${token}/replay`, {
       method: 'POST',
       body: JSON.stringify({ eventId, mockOnly: true }),
+    }),
+
+  shareRequest: (token, id) =>
+    request(`/api/inboxes/${token}/requests/${id}/share`, {
+      method: 'POST',
+      body: '{}',
     }),
 }

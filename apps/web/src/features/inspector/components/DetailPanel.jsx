@@ -83,7 +83,7 @@ export default function DetailPanel({ req, token }) {
   const [replayState, setReplayState] = useState('idle')
   const [replayed, setReplayed] = useState(null)
   const [replayError, setReplayError] = useState(null)
-  const [shareCopied, setShareCopied] = useState(false)
+  const [shareState, setShareState] = useState('idle')
 
   useEffect(() => {
     if (!token) return
@@ -98,6 +98,7 @@ export default function DetailPanel({ req, token }) {
     setReplayState('idle')
     setReplayed(null)
     setReplayError(null)
+    setShareState('idle')
   }, [req?.id])
 
   if (!req) {
@@ -142,12 +143,21 @@ export default function DetailPanel({ req, token }) {
   }
 
   async function handleShare() {
-    if (!req) return
-    const base = window.location.origin
-    const url = `${base}/c/${req.id}`
-    try { await navigator.clipboard.writeText(url) } catch (_) {}
-    setShareCopied(true)
-    setTimeout(() => setShareCopied(false), 2000)
+    if (!req || shareState === 'loading') return
+    setShareState('loading')
+    try {
+      const res = await api.shareRequest(token, req.id)
+      const url = res && typeof res.shareUrl === 'string' ? res.shareUrl : null
+      if (url) {
+        try { await navigator.clipboard.writeText(url) } catch (_) {}
+      }
+      setShareState('done')
+    } catch (_) {
+      setShareState('error')
+    }
+    setTimeout(() => {
+      setShareState(s => (s === 'done' || s === 'error') ? 'idle' : s)
+    }, 2000)
   }
 
   return (
@@ -186,14 +196,23 @@ export default function DetailPanel({ req, token }) {
           <button
             type="button"
             onClick={handleShare}
+            disabled={shareState === 'loading'}
             className="sb-share"
-            style={shareBtn}
+            style={{ ...shareBtn, ...(shareState === 'loading' ? replayBtnDisabled : {}) }}
             aria-label="copy share link"
           >
             <span className="material-symbols-outlined" style={{ fontSize: '13px' }}>
-              {shareCopied ? 'check' : 'link'}
+              {shareState === 'loading' ? 'progress_activity'
+                : shareState === 'done' ? 'check'
+                : shareState === 'error' ? 'error'
+                : 'link'}
             </span>
-            <span>{shareCopied ? 'link copied' : 'share'}</span>
+            <span>{
+              shareState === 'loading' ? 'sharing…'
+              : shareState === 'done' ? 'link copied'
+              : shareState === 'error' ? 'share failed'
+              : 'share'
+            }</span>
           </button>
           <span style={d.timestamp}>{new Date(req.createdAt).toISOString().replace('T', ' ').slice(0, 19)}</span>
         </div>
