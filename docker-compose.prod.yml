@@ -5,14 +5,13 @@ services:
       dockerfile: apps/api/Dockerfile
     container_name: peekhook-api
     restart: unless-stopped
-    depends_on:
-      mongo:
-        condition: service_healthy
     environment:
       NODE_ENV: production
       PORT: 3000
-      MONGODB_URI: mongodb://mongo:27017/peekhook
-      INGEST_URL: http://localhost:3000
+      MONGODB_URI: ${MONGODB_URI}
+      INGEST_URL: ${INGEST_URL}
+      WEB_URL: ${WEB_URL}
+      TRUST_PROXY: ${TRUST_PROXY}
     ports:
       - "3000:3000"
     healthcheck:
