@@ -99,6 +99,98 @@ its weight against the curl-then-look-at-the-Inspector flow.
    answer (MCP auth shape, fixture buttons on landing, self-host
    shape). See "Open questions" section below.
 
+### Security limits (reception + sending, v1.1)
+
+The reception + business + sending limits shipped in v1.1.
+16 issues captured across the capture (`/i/:token`) and reply
+surfaces, ordered by asymmetric-risk first. All shipped
+end-to-end with tests; 319 / 319 backend tests passing.
+
+**Reception — `/i/:token`**
+
+1. **Inspector render-path audit** *(small)* ✓ — stored XSS
+   via captured body / header / filename. React escapes by
+   default; the audit confirmed 0 `dangerouslySetInnerHTML`,
+   0 JSON-into-`<script>` injections, 0 unsanitized
+   `href`/`src`/`style` interpolations. Defense-in-depth:
+   `KVTable.jsx:10-11` and `SharedCaptureView.jsx:104-122`
+   render header keys/values via `{k}` / `{String(v)}`.
+2. **Body size cap (1 MB)** ✓ — `bodyLimit: 1_048_576` on
+   the capture route. 413 on overflow.
+3. **Rate limit per token (60 / min)** ✓ — sliding window
+   persisted on `SandboxInbox.rateWindow`; atomic
+   `findOneAndUpdate` in `MongoInboxRepository.tryConsumeCaptureSlot`.
+   429 + `Retry-After` on overflow.
+4. **Gzip bomb defense** ✓ — `preParsing` zlib inflate hook
+   in `ingestRoute.js`; the 1 MB cap is enforced on the
+   decompressed stream, not just the wire.
+5. **Header sanitization on storage** ✓ — `headerSanitizer.js`
+   strips NUL, C0 controls (except TAB), DEL, and the
+   RTL-override range (`U+202A`-`U+202E`, `U+2066`-`U+2069`).
+6. **Trust proxy / IP spoofing** ✓ — `config.trustProxy`
+   flag (defaults to `true` in prod, `false` in dev).
+   `req.ip` only honors `X-Forwarded-For` when the flag is
+   set; otherwise the socket peer is ground truth.
+7. **IDOR check on read endpoints** ✓ — every read endpoint
+   that takes a request id (`/api/inboxes/:token/requests/:id`,
+   `/api/requests/:id`) is scoped to `{ _id, inboxToken }`.
+   The share-link endpoint now requires `?token=<inboxToken>`.
+8. **Per-inbox request cap: 1,000** ✓ — `captureCount`
+   counter on the aggregate; atomic check
+   `captureCount < 1000` in the same `findOneAndUpdate` as
+   the rate limit. 429 + `Retry-After` on overflow; existing
+   captures stay readable. Mint a new inbox to continue.
+
+**Sending — mock reply, replay, share, MCP**
+
+1. **`node:vm` → worker thread** ✓ — `scriptWorker.js` +
+   `workerThreadRunner.js`. `resourceLimits.maxOldGenerationSizeMb: 32`,
+   200 ms timeout via `worker.terminate()` from the parent,
+   no network, no `Buffer`, no `setTimeout`, no `require`,
+   no `fetch`. `nodeVmRunner.js` deleted. All sandbox-escape
+   attempts (prototype traversal, `process.binding`, infinite
+   loops) verified contained.
+2. **CRLF in mock `content-type`** ✓ — allowlist
+   (`text/plain`, `application/json`, `application/xml`,
+   `text/html`) enforced at config time; CR/LF rejected with
+   400 before the config is persisted.
+3. **Mock body cap: 64 KB** ✓ — `MOCK_BODY_MAX_BYTES` enforced
+   in `validateResponseConfig`; `mockBodySize` field on the
+   aggregate persisted alongside the response config.
+4. **Share link id entropy** ✓ — `crypto.randomBytes(16)`
+   32-hex-char id generated at share time, stored on the
+   request as `shareId`. Sparse unique index `{ inboxToken,
+   shareId }`. New endpoint `POST
+   /api/inboxes/:token/requests/:id/share` returns
+   `{ shareUrl, shareId }`. Old ObjectId URLs return 404.
+5. **SSE connection cap per token** ✓ — 5 concurrent
+   connections per inbox token, 5 min idle timeout, clean
+   close (200 + empty body — see `apiRoute.js:185-198` for
+   why 200 over 204).
+6. **MCP rate limit (10 / min per token)** ✓ — sliding
+   window in `InMemoryMcpRateLimiter`, 429 + `Retry-After`
+   + JSON-RPC `-32002` on overflow. Enforced *after* auth,
+   *before* tool dispatch.
+7. **MCP audit log** ✓ — `mcp_audit_log` collection, one
+   document per authenticated `tools/call`. Plaintext
+   token never enters the pipeline; only the SHA-256
+   `tokenHash` is stored. Best-effort (write failure logs
+   to stderr, the call still succeeds). 7-day TTL on
+   `timestamp` declared in `db.js`.
+8. **MCP prompt-injection wrappers** ✓ — `SafeResponse.js`
+   projects `search_events` and `diff_events` responses
+   through `safeEvent` (extracts id/method/path/contentType/
+   size/ip/createdAt; caps top-level body fields at 1 KB
+   with `truncated: true`). `get_event` gains
+   `includeBody: false` default; even when opted in, the
+   body is wrapped in `userControlled: true` and capped at
+   1 KB. `list_events` and `explain_event` left as-is
+   (summaries only).
+9. **Replay rate limit per inbox token** ✓ — 1 / minute
+   per inbox token (reverted from the v1.1 per-(token, IP)
+   variant after product review). Atomic `tryConsume` in
+   `InMemoryReplayRateLimiter`.
+
 ### Won't build until demand
 
 - **Vanity URLs** (`my-shop.peekhook.dev`). Free → token URL,
@@ -219,6 +311,19 @@ the rationale + effort remain as historical record.
 
 ## Update log
 
+- **v1.1**: security limits shipped end-to-end across the
+  reception (body cap 1 MB, rate limit 60/min, gzip-bomb
+  defense, header sanitization, IDOR audit, trust-proxy),
+  business (per-inbox 1k request cap), and sending
+  (`node:vm` → worker thread sandbox, mock reply 64 KB cap
+  + content-type allowlist + CRLF reject, share link random
+  id, SSE 5-conn cap, replay per-token 1/min, MCP rate
+  limit 10/min + audit log 7-day TTL + prompt-injection
+  wrappers) surfaces. 16 issues captured in the "Security
+  limits" section above, all shipped. 5-commit landing on
+  `main`. 319 / 319 backend tests passing across 37 files.
+  Frontend render-path audit clean (0 XSS vectors);
+  Vitest not yet installed in `apps/web` (separate polish).
 - **v1.0**: 16 / 16 features shipped. Original plan complete.
   Pushed to github.com/ricardomoratomateos/peekhook. Last two
   features (#10 NL search, #13 share link) landed in one

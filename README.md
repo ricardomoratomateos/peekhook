@@ -96,7 +96,12 @@ open product questions we're deferring until we have users.
 
 ## Status
 
-MVP scaffold. Inspector works end-to-end on a single Mongo.
-Not yet deployable to a public URL. Domain `peekhook.dev`
-and a fly.io + Cloudflare Pages target are queued but not
-provisioned.
+v1.1 shipped. All 16 candidate features and all 16 security /
+business limits landed. 319 / 319 backend tests passing
+across 37 files. Self-host via `docker compose up` (mongo +
+api + web with healthchecks and an SSE-friendly nginx in
+front of the web bundle). Public deploy — fly.io (API) +
+Cloudflare Pages (web) + `peekhook.dev` domain — is the
+next concrete step; not yet wired. See
+[ROADMAP.md](./ROADMAP.md) for the full security audit and
+the open questions.
