@@ -32,7 +32,7 @@ services:
     depends_on:
       - api
     expose:
-      - "5173"
+      - "80"
     networks:
       - default
       - coolify
