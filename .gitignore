@@ -5,3 +5,7 @@ dist
 *.log
 .DS_Store
 .vite
+
+# Local-only Claude notes
+CLAUDE.local.md
+
