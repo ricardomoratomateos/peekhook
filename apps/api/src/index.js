@@ -11,6 +11,7 @@ import { registerMcpRoutes } from './mcp/infra/mcp.http.js'
 
 const fastify = Fastify({
   logger: { level: config.isProd ? 'warn' : 'info' },
+  trustProxy: config.trustProxy,
 })
 
 try {

@@ -10,13 +10,18 @@ import { ScriptOutcome } from '../../../scripting/domain/ScriptErrors.js'
 import { MongoPayloadSchemaRepository } from '../../../schema-history/infra/MongoPayloadSchemaRepository.js'
 import { RecordSchema } from '../../../schema-history/app/RecordSchema.js'
 
+const BODY_LIMIT_BYTES     = 1_048_576
+const CAPTURE_METHODS      = ['POST', 'PUT', 'PATCH', 'DELETE']
+
 function makeCaptureRequest() {
   const db = getDb()
   const schemas = new MongoPayloadSchemaRepository(db)
+  const inboxRepo = new MongoInboxRepository(db)
   return new CaptureRequest({
-    inboxes:      new MongoInboxRepository(db),
+    inboxes:      inboxRepo,
     requests:     new MongoCapturedRequestRepository(db),
     recordSchema: new RecordSchema({ schemas }),
+    logger:       inboxRepo ? null : null,
   })
 }
 
@@ -27,7 +32,29 @@ function makeForwardRequest(params) {
   })
 }
 
-const CAPTURE_METHODS = ['POST', 'PUT', 'PATCH', 'DELETE']
+/**
+ * Resolve the client IP from `req.ip`, but ONLY consult forwarded
+ * headers (`X-Forwarded-For`, `X-Real-IP`) when the server has been
+ * configured to trust them. Without this guard, an attacker posting
+ * directly to the API can inject any IP they want via
+ * `X-Forwarded-For: 6.6.6.6` and have it show up as their captured IP.
+ *
+ * Implementation note: Fastify's `trustProxy` option is not exposed
+ * as a public property on the instance, so we read the shared
+ * `config.trustProxy` flag (set in `apps/api/src/config.js`) instead.
+ *
+ * When `trustProxy` is on, we honor `req.ip` (which Fastify resolves
+ * via the `proxy-addr` chain against `X-Forwarded-For`); otherwise
+ * we return the raw socket peer.
+ */
+function resolveClientIp(request) {
+  // Read the live config flag (set in `apps/api/src/config.js` from
+  // `TRUST_PROXY` and `NODE_ENV`). Reading at request time lets tests
+  // override `config.trustProxy` for individual cases without needing
+  // a request decorator or plugin encapsulation workaround.
+  if (config.trustProxy) return request.ip
+  return request.socket && request.socket.remoteAddress ? request.socket.remoteAddress : request.ip
+}
 
 async function captureHandler(request, reply) {
   const { token } = request.params
@@ -38,9 +65,7 @@ async function captureHandler(request, reply) {
   const path        = request.url.split('?')[0]
   const query       = request.query
   const contentType = request.headers['content-type'] ?? ''
-  const clientIp    = request.headers['x-forwarded-for']?.split(',')[0].trim()
-    || request.headers['x-real-ip']
-    || request.ip
+  const clientIp    = resolveClientIp(request)
 
   const result = await makeCaptureRequest().execute({
     inboxToken:  token,
@@ -56,6 +81,21 @@ async function captureHandler(request, reply) {
 
   if (result.outcome === Outcome.INBOX_NOT_FOUND) {
     return reply.code(404).send({ error: 'Inbox not found' })
+  }
+
+  if (result.outcome === Outcome.CAPACITY_EXCEEDED) {
+    return reply
+      .code(429)
+      .header('Retry-After', '60')
+      .send({ error: 'Inbox has reached its 1,000-capture lifetime cap. Mint a new inbox to continue.' })
+  }
+
+  if (result.outcome === Outcome.RATE_LIMITED) {
+    const retryAfter = String(result.retryAfterSec ?? 60)
+    return reply
+      .code(429)
+      .header('Retry-After', retryAfter)
+      .send({ error: 'Rate limit exceeded (60 req / min / token). Try again later.', retryAfterSec: Number(retryAfter) })
   }
 
   const captureId = result.id.toString()
@@ -164,13 +204,18 @@ async function captureHandler(request, reply) {
   return reply.code(200).send({ ok: true, id: captureId })
 }
 
-export default async function ingestRoute(fastify) {
-  const captureBody = (req, body, done) => {
-    req.rawBody     = body.toString('utf8')
-    req.rawBodySize = body.length
-    done(null, null)
-  }
+/**
+ * Hard body-size cap that Fastify applies BEFORE any of our content-type
+ * parsers see the buffer. The cap is the wire size — gzip bombs are
+ * caught separately by the `preParsing` hook below.
+ */
+function captureBody(req, body, done) {
+  req.rawBody     = body.toString('utf8')
+  req.rawBodySize = body.length
+  done(null, null)
+}
 
+export default async function ingestRoute(fastify) {
   fastify.addContentTypeParser(
     ['application/json', 'text/plain'],
     { parseAs: 'buffer' },
@@ -179,8 +224,55 @@ export default async function ingestRoute(fastify) {
   fastify.addContentTypeParser('*', { parseAs: 'buffer' }, captureBody)
 
   for (const method of CAPTURE_METHODS) {
-    fastify.route({ method, url: '/i/:token', handler: captureHandler })
+    fastify.route({
+      method,
+      url:     '/i/:token',
+      handler: captureHandler,
+      bodyLimit: BODY_LIMIT_BYTES,
+    })
   }
+
+  /**
+   * Gzip bomb defense. Fastify's `bodyLimit` is checked on the
+   * RAW (compressed) bytes — that's intentional, because the wire
+   * size is the only number the server sees before decoding. But
+   * that means a 1 KB gzip stream of "AAAA..." can decompress to
+   * 10 MB and still pass the cap. We enforce the same cap on the
+   * DECOMPRESSED size via a `preParsing` hook: when a compressed
+   * body hits the parser chain, we wrap the payload in a
+   * zlib-inflate transform stream. Fastify then streams the
+   * inflated bytes through the content-type parser, and its
+   * internal `receivedLength > limit` check (contentTypeParser.js
+   * `rawBody()`) rejects with FST_ERR_CTP_BODY_TOO_LARGE → 413
+   * once the decoded size crosses 1 MB.
+   *
+   * We additionally set `payload.receivedEncodedLength` to the
+   * wire Content-Length so the bodyLimit guard catches bombs
+   * that lie about their encoded size.
+   */
+  fastify.addHook('preParsing', async (request, reply, payload) => {
+    const encoding = request.headers['content-encoding']
+    if (!encoding) return payload
+    if (!/^\s*(gzip|deflate|br|x-gzip)\s*$/i.test(encoding)) return payload
+
+    const zlib = await import('node:zlib')
+    let stream
+    const enc = encoding.trim().toLowerCase()
+    if (enc === 'gzip' || enc === 'x-gzip') {
+      stream = zlib.createGunzip()
+    } else if (enc === 'deflate') {
+      stream = zlib.createInflate()
+    } else if (enc === 'br') {
+      stream = zlib.createBrotliDecompress()
+    } else {
+      return payload
+    }
+    const contentLength = Number(request.headers['content-length'])
+    if (Number.isFinite(contentLength) && contentLength > 0) {
+      payload.receivedEncodedLength = contentLength
+    }
+    return payload.pipe(stream)
+  })
 
   fastify.get('/i/:token', async (request, reply) => {
     return reply.code(405).send({

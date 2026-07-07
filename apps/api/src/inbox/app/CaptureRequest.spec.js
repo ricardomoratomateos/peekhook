@@ -1,21 +1,19 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
-import { startMongo, getTestDb, stopMongo } from '../../../test/helpers/mongoMemory.js'
+import { startMongo, stopMongo } from '../../../test/helpers/mongoMemory.js'
 import { MongoInboxRepository } from '../infra/persistence/MongoInboxRepository.js'
 import { MongoCapturedRequestRepository } from '../infra/persistence/MongoCapturedRequestRepository.js'
-import { SandboxInbox } from '../domain/SandboxInbox.js'
+import { SandboxInbox, MAX_CAPTURE_COUNT } from '../domain/SandboxInbox.js'
 import { CaptureRequest } from './CaptureRequest.js'
 
 describe('CaptureRequest', () => {
+  let db
   let inboxes
   let requests
-  let inbox
 
   beforeAll(async () => {
-    const db = await startMongo()
-    inboxes = new MongoInboxRepository(db)
+    db = await startMongo()
+    inboxes  = new MongoInboxRepository(db)
     requests = new MongoCapturedRequestRepository(db)
-    inbox = SandboxInbox.create()
-    await inboxes.insert(inbox)
   })
 
   afterAll(async () => {
@@ -23,6 +21,8 @@ describe('CaptureRequest', () => {
   })
 
   it('captures a POST request and returns the inbox responseConfig', async () => {
+    const inbox = SandboxInbox.create()
+    await inboxes.insert(inbox)
     const sut = new CaptureRequest({ inboxes, requests })
     const result = await sut.execute({
       inboxToken: inbox.token,
@@ -88,5 +88,88 @@ describe('CaptureRequest', () => {
       contentType: 'text/plain',
       body: 'upstream busy',
     })
+  })
+
+  it('strips NUL and RTL-override characters from headers before persisting', async () => {
+    const inbox = SandboxInbox.create()
+    await inboxes.insert(inbox)
+    const sut = new CaptureRequest({ inboxes, requests })
+    const result = await sut.execute({
+      inboxToken: inbox.token,
+      method: 'POST',
+      path: '/i/' + inbox.token,
+      query: {},
+      headers: {
+        'content-type': 'application/json',
+        'x-filename':   'invoice\u202Epdf.exe',
+        'x-evil':       'a\u0000b',
+      },
+      body: '{}',
+      contentType: 'application/json',
+      size: 2,
+      ip: '127.0.0.1',
+    })
+    expect(result.outcome).toBe('captured')
+
+    const persisted = await db.collection('requests').findOne({ _id: result.id })
+    expect(persisted.headers['x-filename']).toBe('invoicepdf.exe')
+    expect(persisted.headers['x-evil']).toBe('ab')
+    expect(persisted.headers['content-type']).toBe('application/json')
+  })
+
+  it('returns capacity_exceeded once the inbox has MAX_CAPTURE_COUNT captures', async () => {
+    const inbox = SandboxInbox.create({
+      captureCount: MAX_CAPTURE_COUNT,
+    })
+    await inboxes.insert(inbox)
+    const sut = new CaptureRequest({ inboxes, requests })
+    const result = await sut.execute({
+      inboxToken: inbox.token,
+      method: 'POST',
+      path: '/i/' + inbox.token,
+      query: {},
+      headers: {},
+      body: '{}',
+      contentType: 'application/json',
+      size: 2,
+      ip: '127.0.0.1',
+    })
+    expect(result.outcome).toBe('capacity_exceeded')
+  })
+
+  it('returns rate_limited with retryAfterSec after 60 captures inside the window', async () => {
+    const inbox = SandboxInbox.create()
+    await inboxes.insert(inbox)
+    const sut = new CaptureRequest({ inboxes, requests })
+
+    for (let i = 0; i < 60; i++) {
+      const r = await sut.execute({
+        inboxToken: inbox.token,
+        method: 'POST',
+        path: '/i/' + inbox.token,
+        query: {},
+        headers: {},
+        body: '{}',
+        contentType: 'application/json',
+        size: 2,
+        ip: '127.0.0.1',
+      })
+      expect(r.outcome).toBe('captured')
+    }
+
+    const blocked = await sut.execute({
+      inboxToken: inbox.token,
+      method: 'POST',
+      path: '/i/' + inbox.token,
+      query: {},
+      headers: {},
+      body: '{}',
+      contentType: 'application/json',
+      size: 2,
+      ip: '127.0.0.1',
+    })
+    expect(blocked.outcome).toBe('rate_limited')
+    expect(blocked.retryAfterSec).toBeGreaterThan(0)
+    expect(blocked.retryAfterSec).toBeLessThanOrEqual(60)
   })
 })
