@@ -12,8 +12,8 @@ services:
       INGEST_URL: ${INGEST_URL}
       WEB_URL: ${WEB_URL}
       TRUST_PROXY: ${TRUST_PROXY}
-    ports:
-      - "3000:3000"
+    expose:
+      - "3000"
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/health | grep -q ok"]
       interval: 10s
@@ -31,5 +31,12 @@ services:
     restart: unless-stopped
     depends_on:
       - api
-    ports:
-      - "5173:5173"
+    expose:
+      - "5173"
+    networks:
+      - default
+      - coolify
+
+networks:
+  coolify:
+    external: true
