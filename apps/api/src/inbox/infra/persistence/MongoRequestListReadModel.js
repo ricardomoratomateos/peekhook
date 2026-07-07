@@ -21,6 +21,7 @@ function toDto(doc) {
     ip:               doc.ip,
     createdAt:        doc.createdAt,
     upstreamResponse: doc.upstreamResponse ?? null,
+    shareId:          doc.shareId ?? null,
   }
 }
 
@@ -54,6 +55,12 @@ export class MongoRequestListReadModel extends RequestListReadModel {
   async findById({ inboxToken, id }) {
     if (!ObjectId.isValid(id)) return null
     const doc = await this.col.findOne({ _id: new ObjectId(id), inboxToken })
+    return doc ? toDto(doc) : null
+  }
+
+  async findByShareId({ inboxToken, shareId }) {
+    if (typeof shareId !== 'string' || shareId.length !== 32) return null
+    const doc = await this.col.findOne({ inboxToken, shareId })
     return doc ? toDto(doc) : null
   }
 }

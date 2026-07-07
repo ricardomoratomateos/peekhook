@@ -10,6 +10,8 @@ const MAX_LIMIT     = 200
  *
  * Mirrors `MongoRequestListReadModel.toDto` exactly so the Inspector UI
  * sees the same shape regardless of whether it called `list()` or `search()`.
+ * `shareId` is included (v1.2) so the Inspector's share button can read
+ * the existing share id without a second round-trip.
  */
 function toDto(doc) {
   return {
@@ -24,6 +26,7 @@ function toDto(doc) {
     ip:               doc.ip,
     createdAt:        doc.createdAt,
     upstreamResponse: doc.upstreamResponse ?? null,
+    shareId:          doc.shareId ?? null,
   }
 }
 

@@ -96,6 +96,7 @@ describe('search route (Fastify inject)', () => {
         ip: '127.0.0.1',
         createdAt: expect.any(String),
         upstreamResponse: null,
+        shareId: null,
       },
     ])
   })

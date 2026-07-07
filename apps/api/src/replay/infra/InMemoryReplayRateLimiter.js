@@ -5,10 +5,16 @@ const BUCKET_CAPACITY    = 1                // no bursting
 const BUCKET_TTL_MS      = 24 * 60 * 60 * 1000 // 24h on-access prune
 
 /**
- * InMemoryReplayRateLimiter — process-local token bucket per inbox
- * token. MVP-only; restarting the api process resets every limit.
- * Outline:
+ * InMemoryReplayRateLimiter — process-local token bucket per
+ * inbox token. 1 replay per minute per inbox. MVP-only; restarting
+ * the api process resets every limit.
  *
+ * The bucket is keyed on inboxToken alone. Two callers from
+ * different IPs sharing the same inbox share the same bucket —
+ * 1/min per inbox, full stop. The original v1.0 semantics:
+ * if you want a faster retry, mint a fresh inbox.
+ *
+ * Outline:
  *   - capacity 1, refill 1 per minute, bucket-cursor pre-allocated
  *     tokens; an unkeyed access creates a full bucket at `now`.
  *   - on each access: lazy-refill by `floor(elapsed/interval)` tokens,
@@ -46,10 +52,14 @@ export class InMemoryReplayRateLimiter extends ReplayRateLimiter {
     const now = this.now()
     this.#sweepStale(now)
 
-    let bucket = this.buckets.get(inboxToken)
+    return this.#consumeOne(inboxToken, now)
+  }
+
+  #consumeOne(key, now) {
+    let bucket = this.buckets.get(key)
     if (!bucket) {
       bucket = { tokens: this.capacity, lastRefillMs: now }
-      this.buckets.set(inboxToken, bucket)
+      this.buckets.set(key, bucket)
     } else {
       const elapsed = now - bucket.lastRefillMs
       if (elapsed >= this.refillIntervalMs) {
@@ -72,8 +82,8 @@ export class InMemoryReplayRateLimiter extends ReplayRateLimiter {
   }
 
   #sweepStale(now) {
-    for (const [token, bucket] of this.buckets) {
-      if (now - bucket.lastRefillMs > this.ttlMs) this.buckets.delete(token)
+    for (const [key, bucket] of this.buckets) {
+      if (now - bucket.lastRefillMs > this.ttlMs) this.buckets.delete(key)
     }
   }
 }

@@ -19,4 +19,16 @@ export class RequestListReadModel {
   async findById({ inboxToken, id }) {
     throw new Error('RequestListReadModel.findById not implemented')
   }
+
+  /**
+   * Public share lookup by the random shareId minted at share time.
+   * Scoped to inboxToken (passed as `?token=` on the public URL) so a
+   * leaked shareId cannot enumerate other inboxes' captures.
+   *
+   * @param {{ inboxToken: string, shareId: string }} query
+   * @returns {Promise<object|null>} CapturedRequest DTO, or null if not found
+   */
+  async findByShareId({ inboxToken, shareId }) {
+    throw new Error('RequestListReadModel.findByShareId not implemented')
+  }
 }

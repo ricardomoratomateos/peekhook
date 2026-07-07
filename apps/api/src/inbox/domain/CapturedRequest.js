@@ -8,6 +8,12 @@
  * expiresAt is inherited from the parent SandboxInbox so all records for an
  * inbox expire together. toDocument() maps to the `requests` schema.
  * toDto() produces the public-facing read projection (no inboxToken, no TTL).
+ *
+ * `shareId` is a separate, opt-in 16-byte hex token minted when the user
+ * clicks "share" on a capture. It is the ONLY id that may appear in a
+ * public share URL — the Mongo ObjectId is never exposed. Old captures
+ * captured before this field existed carry `shareId = null` and are
+ * unreadable via the public share endpoint.
  */
 export class CapturedRequest {
   #id
@@ -23,6 +29,7 @@ export class CapturedRequest {
   #createdAt
   #expiresAt
   #upstreamResponse
+  #shareId
 
   constructor(props) {
     this.#id               = props.id
@@ -38,6 +45,7 @@ export class CapturedRequest {
     this.#createdAt        = props.createdAt
     this.#expiresAt        = props.expiresAt
     this.#upstreamResponse = props.upstreamResponse ?? null
+    this.#shareId          = props.shareId ?? null
   }
 
   /**
@@ -55,6 +63,7 @@ export class CapturedRequest {
    *   now: Date,
    *   expiresAt: Date,
    *   upstreamResponse?: object | null,
+   *   shareId?: string | null,
    * }} props
    */
   static create(props) {
@@ -72,10 +81,12 @@ export class CapturedRequest {
       createdAt:        props.now,
       expiresAt:        props.expiresAt,
       upstreamResponse: props.upstreamResponse ?? null,
+      shareId:          props.shareId ?? null,
     })
   }
 
   get id() { return this.#id }
+  get shareId() { return this.#shareId }
 
   /** Snapshot for persistence. */
   toDocument() {
@@ -93,6 +104,7 @@ export class CapturedRequest {
       createdAt:        this.#createdAt,
       expiresAt:        this.#expiresAt,
       upstreamResponse: this.#upstreamResponse,
+      shareId:          this.#shareId,
     }
   }
 
@@ -110,6 +122,7 @@ export class CapturedRequest {
       ip:               this.#ip,
       createdAt:        this.#createdAt,
       upstreamResponse: this.#upstreamResponse,
+      shareId:          this.#shareId,
     }
   }
 }

@@ -37,7 +37,7 @@ describe('InMemoryReplayRateLimiter', () => {
     expect(r.allowed).toBe(true)
   })
 
-  it('keeps separate buckets per inbox token', async () => {
+  it('keeps separate buckets per inboxToken', async () => {
     const limiter = new InMemoryReplayRateLimiter({ now: clock })
     expect((await limiter.tryConsume({ inboxToken: 'a' })).allowed).toBe(true)
     expect((await limiter.tryConsume({ inboxToken: 'b' })).allowed).toBe(true)

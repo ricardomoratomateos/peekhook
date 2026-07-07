@@ -165,6 +165,7 @@ describe('MongoRegexSearchRepository', () => {
       ip:               expect.any(String),
       createdAt:        expect.any(Date),
       upstreamResponse: null,
+      shareId:          null,
     })
     expect(dtos[0].id).toMatch(/^[0-9a-f]{24}$/)
     expect(dtos[0]).not.toHaveProperty('inboxToken')

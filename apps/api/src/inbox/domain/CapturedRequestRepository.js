@@ -32,4 +32,18 @@ export class CapturedRequestRepository {
   async updateUpstreamResponse(id, upstream) {
     throw new Error('CapturedRequestRepository.updateUpstreamResponse not implemented')
   }
+
+  /**
+   * Mint a random share id and attach it to the captured request.
+   * Idempotent: if the request already has a shareId, return the
+   * existing one. Returns the shareId string (32 hex chars).
+   *
+   * @param {string} id
+   * @param {string} inboxToken
+   * @returns {Promise<string|null>} shareId, or null when the request
+   *   does not exist for the given inbox token.
+   */
+  async upsertShareId(id, inboxToken) {
+    throw new Error('CapturedRequestRepository.upsertShareId not implemented')
+  }
 }
