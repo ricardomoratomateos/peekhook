@@ -4,32 +4,35 @@ import { checkForwardLoop } from '../lib/loopRule.js'
 
 const PLACEHOLDER = 'http://localhost:3000/webhook'
 
+function isDirty(draft, value) {
+  return (draft || '').trim() !== (value || '').trim()
+}
+
 export default function ForwardConfigPanel({ token, value, onRequestSave, onRequestClear, busy, ingestUrl }) {
-  const [editing, setEditing] = useState(false)
   const [draft, setDraft]     = useState(value || '')
+  const [editing, setEditing] = useState(false)
   const [error, setError]     = useState(null)
 
   useEffect(() => {
-    if (editing) return
     setDraft(value || '')
     setError(null)
-  }, [value, editing])
+  }, [value])
 
-  const active = Boolean(value)
+  const active = Boolean(value) || editing
 
-  function startEdit() {
-    setDraft(value || '')
+  function enableNow() {
+    setDraft('')
     setError(null)
     setEditing(true)
   }
 
-  function cancelEdit() {
-    setDraft(value || '')
+  function disableNow() {
     setError(null)
+    onRequestClear?.()
     setEditing(false)
   }
 
-  function validateAndSave() {
+  function save() {
     const url = (draft || '').trim()
     if (!url) {
       setError('enter a URL')
@@ -54,33 +57,24 @@ export default function ForwardConfigPanel({ token, value, onRequestSave, onRequ
     setEditing(false)
   }
 
-  function clear() {
+  function cancel() {
+    setDraft(value || '')
     setError(null)
-    onRequestClear?.()
     setEditing(false)
   }
 
-  function toggle(next) {
-    if (!next) {
-      if (value) clear()
-      setEditing(false)
-      return
-    }
-    startEdit()
-  }
+  const dirty = isDirty(draft, value)
 
   return (
     <div style={rc.section}>
       <div style={rc.sectionHead}>
         <span style={rc.sectionTitle}>forward to</span>
-        {active
-          ? <span style={rc.pillOn}><span style={rc.pillOnDot} />on · proxied</span>
-          : <span style={rc.pillOff}>off · captured only</span>}
+        <StatusPill active={active} />
       </div>
 
       <button
         type="button"
-        onClick={() => toggle(!active)}
+        onClick={active ? disableNow : enableNow}
         className="sb-switchrow"
         style={rc.switchRow}
         aria-pressed={active}
@@ -98,99 +92,76 @@ export default function ForwardConfigPanel({ token, value, onRequestSave, onRequ
         </span>
       </button>
 
-      {(active || editing) && (
+      {active && (
         <div style={rc.card}>
-          {editing && (
-            <>
-              <div style={rc.field}>
-                <label style={rc.label}>destination url</label>
-                <input
-                  type="url"
-                  value={draft}
-                  onChange={e => setDraft(e.target.value)}
-                  placeholder={PLACEHOLDER}
-                  spellCheck={false}
-                  autoComplete="off"
-                  style={{
-                    ...rc.input,
-                    borderColor: error ? 'var(--status-red)' : rc.input.border,
-                  }}
-                />
-                <div style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', letterSpacing: '0.04em' }}>
-                  http(s) only · 10s timeout · loop protection against {ingestUrl || 'this ingest origin'}
-                </div>
-              </div>
-
-              <div style={rc.btnRow}>
-                <button
-                  type="button"
-                  onClick={validateAndSave}
-                  disabled={busy}
-                  className="sb-accent"
-                  style={rc.btnPrimary}
-                >
-                  save
-                </button>
-                <button
-                  type="button"
-                  onClick={cancelEdit}
-                  disabled={busy}
-                  style={rc.btnGhost}
-                >
-                  cancel
-                </button>
-                {value && (
-                  <button
-                    type="button"
-                    onClick={clear}
-                    disabled={busy}
-                    style={{ ...rc.btnGhost, color: 'var(--status-red)' }}
-                  >
-                    clear forward
-                  </button>
-                )}
-              </div>
-
-              {error && <div style={rc.error}>{error}</div>}
-            </>
-          )}
-
-          {!editing && value && (
-            <>
-              <div style={rc.field}>
-                <label style={rc.label}>destination url</label>
-                <div style={{ ...rc.input, color: 'var(--text-body)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {value}
-                </div>
-              </div>
-              <div style={rc.btnRow}>
-                <button
-                  type="button"
-                  onClick={startEdit}
-                  className="sb-accent"
-                  style={rc.btnPrimary}
-                >
-                  edit
-                </button>
-                <button
-                  type="button"
-                  onClick={clear}
-                  disabled={busy}
-                  style={{ ...rc.btnGhost, color: 'var(--status-red)' }}
-                >
-                  clear forward
-                </button>
-              </div>
-            </>
-          )}
-
-          {!editing && !value && (
-            <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', letterSpacing: '0.04em' }}>
-              toggle on to proxy webhooks to your dev server.
+          <div style={rc.field}>
+            <label style={rc.label}>destination url</label>
+            <input
+              type="url"
+              value={draft}
+              onChange={e => setDraft(e.target.value)}
+              placeholder={PLACEHOLDER}
+              spellCheck={false}
+              autoComplete="off"
+              style={{
+                ...rc.input,
+                borderColor: error ? 'var(--status-red)' : rc.input.border,
+              }}
+            />
+            <div style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', letterSpacing: '0.04em' }}>
+              http(s) only · 10s timeout · loop protection against {ingestUrl || 'this ingest origin'}
             </div>
-          )}
+          </div>
+
+          <div style={rc.btnRow}>
+            <button
+              type="button"
+              onClick={save}
+              disabled={busy}
+              className="sb-accent"
+              style={rc.btnPrimary}
+            >
+              save
+            </button>
+            <button
+              type="button"
+              onClick={cancel}
+              disabled={busy || !dirty}
+              style={rc.btnGhost}
+            >
+              cancel
+            </button>
+            <button
+              type="button"
+              onClick={disableNow}
+              disabled={busy}
+              style={{ ...rc.btnGhost, color: 'var(--status-red)' }}
+            >
+              clear forward
+            </button>
+          </div>
+
+          {error && <div style={rc.error}>{error}</div>}
+        </div>
+      )}
+
+      {!active && (
+        <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', letterSpacing: '0.04em' }}>
+          toggle on to proxy webhooks to your dev server.
         </div>
       )}
     </div>
   )
+}
+
+function StatusPill({ active }) {
+  if (active) {
+    return (
+      <span style={rc.pillOn}>
+        <span style={rc.pillOnDot} />
+        on · proxied
+      </span>
+    )
+  }
+  return <span style={rc.pillOff}>off · captured only</span>
 }

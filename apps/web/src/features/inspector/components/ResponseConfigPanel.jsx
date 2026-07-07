@@ -27,28 +27,28 @@ function makeDraft(value) {
   }
 }
 
+function isDirty(draft, value) {
+  if (!value) {
+    return draft.body !== '' || draft.scriptEnabled || draft.script !== ''
+  }
+  return (
+    draft.status !== value.status ||
+    draft.contentType !== value.contentType ||
+    draft.body !== value.body ||
+    draft.scriptEnabled !== Boolean(value.scriptEnabled) ||
+    draft.script !== (value.script || '')
+  )
+}
+
 export default function ResponseConfigPanel({ token, value, onRequestSave, onRequestClear, busy }) {
-  const [draft, setDraft]     = useState(() => makeDraft(value))
+  const [draft, setDraft]   = useState(() => makeDraft(value))
   const [editing, setEditing] = useState(false)
-  const [error, setError]     = useState(null)
+  const [error, setError]   = useState(null)
 
   useEffect(() => {
-    if (editing) return
     setDraft(makeDraft(value))
     setError(null)
-  }, [value, editing])
-
-  function startEdit() {
-    setDraft(makeDraft(value))
-    setError(null)
-    setEditing(true)
-  }
-
-  function cancelEdit() {
-    setDraft(makeDraft(value))
-    setError(null)
-    setEditing(false)
-  }
+  }, [value])
 
   function patch(p) {
     setDraft(d => ({ ...d, ...p }))
@@ -56,11 +56,8 @@ export default function ResponseConfigPanel({ token, value, onRequestSave, onReq
 
   function save() {
     setError(null)
-    const enabledFlag = draft.scriptEnabled && draft.script.trim().length > 0
-      ? true
-      : draft.enabled
     const config = {
-      enabled: enabledFlag,
+      enabled: true,
       status:  Number(draft.status),
       contentType: draft.contentType,
       body: draft.body,
@@ -71,61 +68,56 @@ export default function ResponseConfigPanel({ token, value, onRequestSave, onReq
     setEditing(false)
   }
 
-  function clear() {
+  function cancel() {
+    setDraft(makeDraft(value))
+    setError(null)
+    setEditing(false)
+  }
+
+  function enableNow() {
+    setDraft(makeDraft(null))
+    setError(null)
+    setEditing(true)
+  }
+
+  function disableNow() {
     setError(null)
     onRequestClear?.()
     setEditing(false)
   }
 
-  function enableNow() {
-    startEdit()
-    setDraft(d => ({ ...d, enabled: true }))
-  }
-
-  function disableNow() {
-    if (value && value.enabled) {
-      clear()
-    } else {
-      setEditing(false)
-    }
-  }
-
   const scriptOver = draft.script.length > SCRIPT_MAX
-  const active = Boolean(value?.enabled)
-  const pillSource = editing
-    ? { enabled: draft.enabled, status: draft.status, scriptEnabled: draft.scriptEnabled, script: draft.script }
-    : value
+  const active = Boolean(value?.enabled) || editing
+  const dirty = isDirty(draft, value)
 
   return (
     <div style={rc.section}>
       <div style={rc.sectionHead}>
         <span style={rc.sectionTitle}>response</span>
-        <StatusPill rs={pillSource} />
+        <StatusPill rs={editing ? draft : value} />
       </div>
 
-      {!editing && (
-        <button
-          type="button"
-          onClick={active ? disableNow : enableNow}
-          className="sb-switchrow"
-          style={rc.switchRow}
-          aria-pressed={active}
-        >
-          <span>
-            <span style={rc.switchRowLabel}>custom reply</span>
-            <div style={rc.switchHint}>
-              {active
-                ? 'on — your reply is returned to webhook senders'
-                : 'off — toggle on to configure one'}
-            </div>
-          </span>
-          <span style={{ ...rc.switchTrack, ...(active ? rc.switchTrackOn : {}) }}>
-            <span style={{ ...rc.switchThumb, ...(active ? rc.switchThumbOn : {}) }} />
-          </span>
-        </button>
-      )}
+      <button
+        type="button"
+        onClick={active ? disableNow : enableNow}
+        className="sb-switchrow"
+        style={rc.switchRow}
+        aria-pressed={active}
+      >
+        <span>
+          <span style={rc.switchRowLabel}>custom reply</span>
+          <div style={rc.switchHint}>
+            {active
+              ? 'on — your reply is returned to webhook senders'
+              : 'off — toggle on to configure one'}
+          </div>
+        </span>
+        <span style={{ ...rc.switchTrack, ...(active ? rc.switchTrackOn : {}) }}>
+          <span style={{ ...rc.switchThumb, ...(active ? rc.switchThumbOn : {}) }} />
+        </span>
+      </button>
 
-      {editing && (
+      {active && (
         <div style={rc.card}>
           <div style={rc.fieldRow}>
             <div style={rc.field}>
@@ -213,52 +205,29 @@ export default function ResponseConfigPanel({ token, value, onRequestSave, onReq
             </button>
             <button
               type="button"
-              onClick={cancelEdit}
-              disabled={busy}
+              onClick={cancel}
+              disabled={busy || !dirty}
               style={rc.btnGhost}
             >
               cancel
             </button>
-            {value && (
-              <button
-                type="button"
-                onClick={clear}
-                disabled={busy}
-                style={{ ...rc.btnGhost, color: 'var(--status-red)' }}
-              >
-                clear reply
-              </button>
-            )}
+            <button
+              type="button"
+              onClick={disableNow}
+              disabled={busy}
+              style={{ ...rc.btnGhost, color: 'var(--status-red)' }}
+            >
+              clear reply
+            </button>
           </div>
 
           {error && <div style={rc.error}>{error}</div>}
         </div>
       )}
 
-      {!editing && !active && (
+      {!active && (
         <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', letterSpacing: '0.04em' }}>
           toggle on to configure a custom reply, or use forward below to proxy webhooks.
-        </div>
-      )}
-
-      {!editing && active && (
-        <div style={rc.btnRow}>
-          <button
-            type="button"
-            onClick={startEdit}
-            className="sb-accent"
-            style={rc.btnPrimary}
-          >
-            edit
-          </button>
-          <button
-            type="button"
-            onClick={clear}
-            disabled={busy}
-            style={{ ...rc.btnGhost, color: 'var(--status-red)' }}
-          >
-            clear reply
-          </button>
         </div>
       )}
     </div>
@@ -279,6 +248,14 @@ function StatusPill({ rs }) {
       <span style={rc.pillOn} title="custom reply active">
         <span style={rc.pillOnDot} />
         custom · {rs.status}
+      </span>
+    )
+  }
+  if (rs && (rs.status || rs.contentType)) {
+    return (
+      <span style={rc.pillOn} title="custom reply preview">
+        <span style={rc.pillOnDot} />
+        custom · {rs.status || 200}
       </span>
     )
   }
