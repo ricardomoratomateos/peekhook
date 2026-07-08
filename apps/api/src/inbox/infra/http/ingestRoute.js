@@ -13,16 +13,38 @@ import { RecordSchema } from '../../../schema-history/app/RecordSchema.js'
 const BODY_LIMIT_BYTES     = 1_048_576
 const CAPTURE_METHODS      = ['POST', 'PUT', 'PATCH', 'DELETE']
 
-function makeCaptureRequest() {
-  const db = getDb()
-  const schemas = new MongoPayloadSchemaRepository(db)
-  const inboxRepo = new MongoInboxRepository(db)
+/**
+ * Wire the CaptureRequest use case from the per-request fastify
+ * instance. In production the orchestrator (`buildApp`) decorates
+ * the fastify instance with the real adapters; in tests the
+ * decorator is absent and we fall back to a fresh `getDb()`-sourced
+ * Mongo adapter so the existing test suite (which only sets the
+ * test db) keeps working without a rewrite.
+ *
+ * `fastify` is read off `request.server` (the root fastify instance)
+ * by the handler — the handler is module-level so it has no closure
+ * over the `fastify` passed to `ingestRoute(fastify)`. The root
+ * instance carries the decorations added by `buildApp` and is the
+ * same one `__setDbForTest` points at in the test harness.
+ */
+function makeCaptureRequest(fastify) {
+  const inboxRepo  = fastify.inboxRepo
+  const schemaRepo = fastify.schemaRepo
+  const requestRepo = fastify.capturedRequestRepo
+  const storageMissing = !inboxRepo || !schemaRepo || !requestRepo
+  const db = storageMissing ? getDb() : null
   return new CaptureRequest({
-    inboxes:      inboxRepo,
-    requests:     new MongoCapturedRequestRepository(db),
-    recordSchema: new RecordSchema({ schemas }),
-    logger:       inboxRepo ? null : null,
+    inboxes:      inboxRepo  ?? new MongoInboxRepository(db),
+    requests:     requestRepo ?? new MongoCapturedRequestRepository(db),
+    recordSchema: new RecordSchema({
+      schemas: schemaRepo ?? new MongoPayloadSchemaRepository(db),
+    }),
+    logger:       null,
   })
+}
+
+function makeRequestRepo(fastify) {
+  return fastify.capturedRequestRepo ?? new MongoCapturedRequestRepository(getDb())
 }
 
 function makeForwardRequest(params) {
@@ -67,7 +89,7 @@ async function captureHandler(request, reply) {
   const contentType = request.headers['content-type'] ?? ''
   const clientIp    = resolveClientIp(request)
 
-  const result = await makeCaptureRequest().execute({
+  const result = await makeCaptureRequest(request.server).execute({
     inboxToken:  token,
     method:      request.method,
     path,
@@ -99,8 +121,7 @@ async function captureHandler(request, reply) {
   }
 
   const captureId = result.id.toString()
-  const db = getDb()
-  const capturedRepo = new MongoCapturedRequestRepository(db)
+  const capturedRepo = makeRequestRepo(request.server)
 
   if (result.forwardTo) {
     const fwd = await makeForwardRequest({

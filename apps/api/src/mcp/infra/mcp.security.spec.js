@@ -1,23 +1,20 @@
-import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest'
+import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import Fastify from 'fastify'
 import { startMongo, getTestDb, stopMongo } from '../../../test/helpers/mongoMemory.js'
 import { MongoInboxRepository } from '../../inbox/infra/persistence/MongoInboxRepository.js'
 import { MongoCapturedRequestRepository } from '../../inbox/infra/persistence/MongoCapturedRequestRepository.js'
+import { MongoRequestListReadModel } from '../../inbox/infra/persistence/MongoRequestListReadModel.js'
 import { SandboxInbox } from '../../inbox/domain/SandboxInbox.js'
 import { CapturedRequest } from '../../inbox/domain/CapturedRequest.js'
 import { MongoMcpAuthRepository } from '../infra/MongoMcpAuthRepository.js'
+import { MongoRequestSearchReadModel } from '../infra/MongoRequestSearchReadModel.js'
+import { MongoMcpAuditLog } from '../infra/persistence/MongoMcpAuditLog.js'
 import { MintMcpToken } from '../app/MintMcpToken.js'
 import { InMemoryMcpRateLimiter } from '../infra/InMemoryMcpRateLimiter.js'
 import { registerMcpRoutes } from '../infra/mcp.http.js'
 import { BODY_FIELD_CAP_BYTES } from '../app/SafeResponse.js'
 
-const mockDb = vi.hoisted(() => ({ db: null }))
-
-vi.mock('../../shared/db.js', () => ({
-  connectDb: async () => {},
-  getDb:     () => mockDb.db,
-  closeDb:   async () => {},
-}))
+const mockDb = { db: null }
 
 /**
  * Each test creates its own inbox + mcp token + events so the
@@ -78,10 +75,14 @@ async function freshSecondInbox() {
 }
 
 async function buildServer(rateLimiter, auditLog) {
+  const db = getTestDb()
   const server = Fastify({ logger: false })
   await server.register(registerMcpRoutes, {
-    rateLimiter: rateLimiter ?? new InMemoryMcpRateLimiter(),
-    ...(auditLog ? { auditLog } : {}),
+    mcpRateLimiter:     rateLimiter ?? new InMemoryMcpRateLimiter(),
+    mcpAuditLog:        auditLog    ?? new MongoMcpAuditLog(db),
+    mcpAuth:            new MongoMcpAuthRepository(db),
+    requestReadModel:   new MongoRequestListReadModel(db),
+    mcpSearchReadModel: new MongoRequestSearchReadModel(db),
   })
   await server.ready()
   return server

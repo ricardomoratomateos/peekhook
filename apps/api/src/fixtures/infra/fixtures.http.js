@@ -42,7 +42,7 @@ import { SendFixture } from '../app/SendFixture.js'
  */
 export default async function registerFixtureRoutes(fastify, opts = {}) {
   const fixtureRepo    = opts.fixtureRepo    ?? new MemoryFixtureRepository(SEEDED_FIXTURES)
-  const captureRequest = opts.captureRequest ?? buildDefaultCaptureRequest()
+  const captureRequest = opts.captureRequest ?? buildDefaultCaptureRequest(fastify)
 
   const listFixtures = new ListFixtures({ fixtures: fixtureRepo })
   const sendFixture  = new SendFixture({ fixtures: fixtureRepo, captureRequest })
@@ -67,13 +67,13 @@ export default async function registerFixtureRoutes(fastify, opts = {}) {
   })
 }
 
-function buildDefaultCaptureRequest() {
+function buildDefaultCaptureRequest(fastify) {
   const db = getDb()
   return new CaptureRequest({
-    inboxes:      new MongoInboxRepository(db),
-    requests:     new MongoCapturedRequestRepository(db),
+    inboxes:      fastify.inboxRepo          ?? new MongoInboxRepository(db),
+    requests:     fastify.capturedRequestRepo ?? new MongoCapturedRequestRepository(db),
     recordSchema: new RecordSchema({
-      schemas: new MongoPayloadSchemaRepository(db),
+      schemas: fastify.schemaRepo ?? new MongoPayloadSchemaRepository(db),
     }),
   })
 }

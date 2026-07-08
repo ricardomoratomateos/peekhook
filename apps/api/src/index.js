@@ -1,18 +1,28 @@
-import Fastify from 'fastify'
-import fastifyCors from '@fastify/cors'
 import { config } from './config.js'
-import { connectDb, closeDb } from './shared/db.js'
-import ingestRoute from './inbox/infra/http/ingestRoute.js'
-import apiRoute from './inbox/infra/http/apiRoute.js'
-import { registerSearchRoutes } from './search/search.http.js'
-import registerFixtureRoutes from './fixtures/infra/fixtures.http.js'
-import { registerReplayRoutes } from './replay/infra/replay.http.js'
-import { registerMcpRoutes } from './mcp/infra/mcp.http.js'
+import { connectDb, closeDb, getDb } from './shared/db.js'
+import { buildApp } from './app.js'
+import { MongoInboxRepository } from './inbox/infra/persistence/MongoInboxRepository.js'
+import { MongoCapturedRequestRepository } from './inbox/infra/persistence/MongoCapturedRequestRepository.js'
+import { MongoRequestListReadModel } from './inbox/infra/persistence/MongoRequestListReadModel.js'
+import { MongoPayloadSchemaRepository } from './schema-history/infra/MongoPayloadSchemaRepository.js'
+import { MongoRegexSearchRepository } from './search/infra/MongoRegexSearchRepository.js'
+import { MemoryFixtureRepository } from './fixtures/infra/MemoryFixtureRepository.js'
+import { SEEDED_FIXTURES } from './fixtures/fixtures/index.js'
+import { InMemoryReplayRateLimiter } from './replay/infra/InMemoryReplayRateLimiter.js'
+import { MongoMcpAuthRepository } from './mcp/infra/MongoMcpAuthRepository.js'
 
-const fastify = Fastify({
-  logger: { level: config.isProd ? 'warn' : 'info' },
-  trustProxy: config.trustProxy,
-})
+let singletonRateLimiter
+
+/**
+ * Shared process-wide replay rate limiter. Module-level so a
+ * single instance survives across requests inside one api process
+ * — required for the per-inbox 1/minute semantics to be observable
+ * in real traffic. Restart resets state (documented limitation).
+ */
+function getReplayRateLimiter() {
+  if (!singletonRateLimiter) singletonRateLimiter = new InMemoryReplayRateLimiter()
+  return singletonRateLimiter
+}
 
 try {
   await connectDb()
@@ -21,30 +31,29 @@ try {
   process.exit(1)
 }
 
-await fastify.register(ingestRoute)
-await fastify.register(fastifyCors, {
-  origin: process.env.WEB_URL || 'http://localhost:5173',
-  credentials: true,
+const db = getDb()
+const app = await buildApp({
+  inboxRepo:          new MongoInboxRepository(db),
+  capturedRequestRepo: new MongoCapturedRequestRepository(db),
+  requestReadModel:   new MongoRequestListReadModel(db),
+  schemaRepo:         new MongoPayloadSchemaRepository(db),
+  searchRepo:         new MongoRegexSearchRepository(db),
+  fixtureRepo:        new MemoryFixtureRepository(SEEDED_FIXTURES),
+  replayRateLimiter:  getReplayRateLimiter(),
+  mcpAuth:            new MongoMcpAuthRepository(db),
 })
-await fastify.register(apiRoute)
-await fastify.register(registerSearchRoutes)
-await fastify.register(registerFixtureRoutes)
-await fastify.register(registerReplayRoutes)
-await fastify.register(registerMcpRoutes)
-
-fastify.get('/health', async () => ({ ok: true }))
 
 try {
-  await fastify.listen({ port: config.port, host: '0.0.0.0' })
+  await app.listen({ port: config.port, host: '0.0.0.0' })
   console.log(`PeekHook API running on port ${config.port}`)
 } catch (err) {
-  fastify.log.error(err)
+  app.log.error(err)
   process.exit(1)
 }
 
 for (const signal of ['SIGINT', 'SIGTERM']) {
   process.once(signal, async () => {
-    await fastify.close()
+    await app.close()
     await closeDb()
     process.exit(0)
   })

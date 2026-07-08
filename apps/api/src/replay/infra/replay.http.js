@@ -19,11 +19,13 @@ export function getRateLimiter() {
   return singletonRateLimiter
 }
 
-function makeReplayer() {
+function makeReplayer(fastify) {
   const db = getDb()
+  const inboxRepo = fastify.inboxRepo        ?? new MongoInboxRepository(db)
+  const readModel = fastify.requestReadModel ?? new MongoRequestListReadModel(db)
   return new ReplayEvent({
-    inboxes:     new MongoInboxRepository(db),
-    requests:    new MongoRequestListReadModel(db),
+    inboxes:     inboxRepo,
+    requests:    readModel,
     rateLimiter: getRateLimiter(),
     runScript,
   })
@@ -41,10 +43,26 @@ function makeReplayer() {
  * in-memory limiter) so each test starts with a clean bucket.
  *
  * @param {import('fastify').FastifyInstance} fastify
- * @param {{ replayEvent?: ReplayEvent }}      [opts]
+ * @param {{
+ *   replayEvent?:      ReplayEvent,
+ *   replayRateLimiter?: import('../domain/ReplayRateLimiter.js').ReplayRateLimiter,
+ *   inboxRepo?:        import('../../inbox/domain/InboxRepository.js').InboxRepository,
+ *   requestReadModel?: import('../../inbox/domain/RequestListReadModel.js').RequestListReadModel,
+ * }} [opts]
  */
 export async function registerReplayRoutes(fastify, opts = {}) {
-  const replayEvent = opts.replayEvent ?? makeReplayer()
+  const replayEvent = opts.replayEvent
+    ?? (opts.replayRateLimiter
+      ? (() => {
+          const db = getDb()
+          return new ReplayEvent({
+            inboxes:     opts.inboxRepo        ?? new MongoInboxRepository(db),
+            requests:    opts.requestReadModel ?? new MongoRequestListReadModel(db),
+            rateLimiter: opts.replayRateLimiter,
+            runScript,
+          })
+        })()
+      : makeReplayer(fastify))
 
   fastify.post('/api/inboxes/:token/replay', async (request, reply) => {
     const { token } = request.params

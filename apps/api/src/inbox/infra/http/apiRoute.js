@@ -54,6 +54,10 @@ function unregisterSseConnection(token, connectionId, registry = sseConnectionsB
   if (bucket.size === 0) registry.delete(token)
 }
 
+function nextSseConnectionId() {
+  return sseNextConnectionId++
+}
+
 /**
  * Pure cap-check predicate. Returns true when a new connection can
  * be accepted, false when the cap is reached. Pure (no side
@@ -85,17 +89,56 @@ export const __sseConstants = Object.freeze({
   DEFAULT_IDLE_TIMEOUT_MS:   SSE_DEFAULT_IDLE_TIMEOUT_MS,
 })
 export const __sseInternals = Object.freeze({
-  registry:        sseConnectionsByToken,
-  register:        registerSseConnection,
-  unregister:      unregisterSseConnection,
+  registry:         sseConnectionsByToken,
+  register:         registerSseConnection,
+  unregister:       unregisterSseConnection,
+  nextConnectionId: nextSseConnectionId,
 })
 
-function makeUseCases() {
-  const db = getDb()
-  const readModel  = new MongoRequestListReadModel(db)
-  const inboxRepo  = new MongoInboxRepository(db)
-  const schemaRepo = new MongoPayloadSchemaRepository(db)
-  const mcpAuth    = new MongoMcpAuthRepository(db)
+/**
+ * sseInternals — non-underscored alias of __sseInternals used by
+ * the SSE route module (`sseRoute.js`) to mint connection ids and
+ * access the registry. Same shape, public name (no `__` prefix)
+ * because `sseRoute.js` is part of the same package and the
+ * import is intentional rather than test-only.
+ */
+export const sseInternals = __sseInternals
+
+/**
+ * Resolve the persisted-deps to use for this request. In
+ * production `buildApp` decorates the fastify instance with the
+ * real adapters; in tests the decorator is absent and we fall
+ * back to a fresh `getDb()`-sourced Mongo adapter so the
+ * existing test suite (which only sets the test db) keeps
+ * working without a rewrite.
+ *
+ * @returns {{
+ *   inboxRepo:  InboxRepository,
+ *   readModel:  RequestListReadModel,
+ *   schemaRepo: PayloadSchemaRepository,
+ *   mcpAuth:    McpAuthRepository,
+ * }}
+ */
+function resolveDeps(fastify) {
+  // Only consult getDb() when at least one of the storage deps is
+  // missing. mcpAuth is separate: it is cloud-only and its absence
+  // here just means MCP is disabled (the mintMcpToken caller already
+  // gates on the mcpEnabled feature flag).
+  const inboxRepo  = fastify.inboxRepo
+  const readModel  = fastify.requestReadModel
+  const schemaRepo = fastify.schemaRepo
+  const storageMissing = !inboxRepo || !readModel || !schemaRepo
+  const db = storageMissing ? getDb() : null
+  return {
+    inboxRepo:  inboxRepo  ?? new MongoInboxRepository(db),
+    readModel:  readModel  ?? new MongoRequestListReadModel(db),
+    schemaRepo: schemaRepo ?? new MongoPayloadSchemaRepository(db),
+    mcpAuth:    fastify.mcpAuth ?? null,  // null when MCP is disabled (local mode)
+  }
+}
+
+function makeUseCases(fastify) {
+  const { inboxRepo, readModel, schemaRepo, mcpAuth } = resolveDeps(fastify)
   return {
     createInbox:       new CreateInbox({ inboxes: inboxRepo }),
     listRequests:      new ListRequests({ requests: readModel }),
@@ -107,28 +150,21 @@ function makeUseCases() {
   }
 }
 
-function toDto(doc) {
-  return {
-    id:               doc._id.toString(),
-    method:           doc.method,
-    path:             doc.path,
-    query:            doc.query,
-    headers:          doc.headers,
-    body:             doc.body,
-    contentType:      doc.contentType,
-    size:             doc.size,
-    ip:               doc.ip,
-    createdAt:        doc.createdAt,
-    upstreamResponse: doc.upstreamResponse ?? null,
-    shareId:          doc.shareId ?? null,
-  }
-}
-
 export default async function apiRoute(fastify) {
+  const features = fastify.features ?? {}
+  const mcpEnabled    = features.mcpEnabled    !== false
+  const shareEnabled  = features.shareEnabled  !== false
+
   fastify.post('/api/inboxes', async (request, reply) => {
-    const { createInbox, mintMcpToken } = makeUseCases()
+    const { createInbox, mintMcpToken } = makeUseCases(fastify)
     const result = await createInbox.execute()
-    const { mcpToken } = await mintMcpToken.execute({ inboxToken: result.token })
+
+    let mcpToken = null
+    if (mcpEnabled) {
+      const minted = await mintMcpToken.execute({ inboxToken: result.token })
+      mcpToken = minted.mcpToken
+    }
+
     return reply.code(201).send({
       token:        result.token,
       url:          `${config.ingestUrl}/i/${result.token}`,
@@ -140,120 +176,10 @@ export default async function apiRoute(fastify) {
     })
   })
 
-  fastify.get('/api/inboxes/:token/stream', async (request, reply) => {
-    const { token } = request.params
-
-    // Connection cap (security limits item 8): a single inbox token
-    // can hold at most SSE_MAX_CONNECTIONS_PER_TOKEN concurrent stream
-    // subscribers. The sixth attempt is rejected with 429 + Retry-After
-    // so a misbehaving client cannot pin the API process on a single
-    // inbox.
-    if (!canAcceptSseConnection(token)) {
-      return reply
-        .code(429)
-        .header('Retry-After', '30')
-        .send({
-          error: `Max ${SSE_MAX_CONNECTIONS_PER_TOKEN} concurrent SSE connections per inbox`,
-          maxConnections: SSE_MAX_CONNECTIONS_PER_TOKEN,
-        })
-    }
-
-    reply.hijack()
-    const res = reply.raw
-    res.writeHead(200, {
-      'Content-Type':      'text/event-stream',
-      'Cache-Control':     'no-cache',
-      'Connection':        'keep-alive',
-      'X-Accel-Buffering': 'no',
-    })
-    res.write(': connected\n\n')
-
-    const db = getDb()
-
-    const latestDoc = await db.collection('requests').findOne(
-      { inboxToken: token },
-      { sort: { _id: -1 }, projection: { _id: 1 } },
-    )
-    let lastId = latestDoc?._id ?? new ObjectId(Math.floor(Date.now() / 1000))
-
-    const connectionId = sseNextConnectionId++
-    registerSseConnection(token, connectionId)
-
-    let closed = false
-    request.raw.on('close', () => { closed = true })
-
-    // Idle timeout (security limits item 9): a connection that has not
-    // seen any event for the configured idle window is closed so
-    // abandoned tabs (the typical case) do not accumulate server
-    // sockets forever.
-    //
-    // Documented choice — we close with HTTP 200 + empty body rather
-    // than 204, because the SSE response has already flushed a
-    // `text/event-stream` header with status 200 the moment we wrote
-    // `: connected\n\n`. Node refuses a second `writeHead()` after the
-    // first body byte, so attempting 204 would either be a no-op
-    // (status already 200 on the wire) or throw. The EventSource client
-    // treats both shapes as a normal end-of-stream and will reconnect,
-    // so the user-visible behavior is identical. We just `res.end()`
-    // to close the socket cleanly.
-    const idleTimeoutMs = getSseIdleTimeoutMs()
-    let lastEventAt = Date.now()
-    const idle = setInterval(() => {
-      if (closed) { clearInterval(idle); return }
-      if (Date.now() - lastEventAt < idleTimeoutMs) return
-      // Idle window elapsed — close the stream. Best-effort: the
-      // client may have already gone away, in which case the
-      // `close` handler below takes over.
-      closed = true
-      clearInterval(idle)
-      clearInterval(poll)
-      clearInterval(ping)
-      unregisterSseConnection(token, connectionId)
-      try {
-        res.end()
-      } catch (_) { /* socket may already be torn down */ }
-    }, Math.min(5_000, Math.max(20, Math.floor(idleTimeoutMs / 4))))
-
-    const poll = setInterval(async () => {
-      if (closed) { clearInterval(poll); clearInterval(ping); clearInterval(idle); return }
-      try {
-        const newDocs = await db.collection('requests')
-          .find({ inboxToken: token, _id: { $gt: lastId } })
-          .sort({ _id: 1 })
-          .limit(20)
-          .toArray()
-
-        if (newDocs.length > 0) {
-          lastEventAt = Date.now()
-          for (const doc of newDocs) {
-            if (closed) break
-            lastId = doc._id
-            res.write(`data: ${JSON.stringify({ type: 'request', data: toDto(doc) })}\n\n`)
-          }
-        }
-      } catch (_) { /* DB error — keep streaming, client will retry */ }
-    }, SSE_POLL_INTERVAL_MS)
-
-    const ping = setInterval(() => {
-      if (closed) { clearInterval(ping); return }
-      lastEventAt = Date.now()
-      try { res.write(': ping\n\n') } catch (_) {}
-    }, SSE_PING_INTERVAL_MS)
-
-    request.raw.on('close', () => {
-      closed = true
-      clearInterval(poll)
-      clearInterval(ping)
-      clearInterval(idle)
-      unregisterSseConnection(token, connectionId)
-      if (!res.destroyed) res.end()
-    })
-  })
-
   fastify.get('/api/inboxes/:token/requests', async (request, reply) => {
     const { token }          = request.params
     const { limit = 50, before } = request.query
-    const { listRequests } = makeUseCases()
+    const { listRequests } = makeUseCases(fastify)
     const results = await listRequests.execute({ inboxToken: token, limit, before })
     return reply.send(results)
   })
@@ -262,7 +188,7 @@ export default async function apiRoute(fastify) {
     const { token, id } = request.params
     if (!ObjectId.isValid(id)) return reply.code(400).send({ error: 'Invalid id' })
 
-    const { getRequest } = makeUseCases()
+    const { getRequest } = makeUseCases(fastify)
     const result = await getRequest.execute({ inboxToken: token, id })
     if (!result) return reply.code(404).send({ error: 'Request not found' })
     return reply.send(result)
@@ -280,25 +206,25 @@ export default async function apiRoute(fastify) {
   //
   // Response shape (frontend contract):
   //   { shareUrl: "https://<host>/c/<shareId>?token=<inboxToken>" }
-  fastify.post('/api/inboxes/:token/requests/:id/share', async (request, reply) => {
-    const { token, id } = request.params
-    if (!ObjectId.isValid(id)) return reply.code(400).send({ error: 'Invalid id' })
+  if (shareEnabled) {
+    fastify.post('/api/inboxes/:token/requests/:id/share', async (request, reply) => {
+      const { token, id } = request.params
+      if (!ObjectId.isValid(id)) return reply.code(400).send({ error: 'Invalid id' })
 
-    const db = getDb()
-    const inbox = await db.collection('inboxes').findOne(
-      { token },
-      { projection: { _id: 1 } },
-    )
-    if (!inbox) return reply.code(404).send({ error: 'Inbox not found' })
+      const { inboxRepo, readModel } = resolveDeps(fastify)
+      const inbox = await inboxRepo.findByToken(token)
+      if (!inbox) return reply.code(404).send({ error: 'Inbox not found' })
 
-    const capturedRepo = new MongoCapturedRequestRepository(db)
-    const shareId = await capturedRepo.upsertShareId(id, token)
-    if (!shareId) return reply.code(404).send({ error: 'Request not found' })
+      const db = getDb()
+      const capturedRepo = new MongoCapturedRequestRepository(db)
+      const shareId = await capturedRepo.upsertShareId(id, token)
+      if (!shareId) return reply.code(404).send({ error: 'Request not found' })
 
-    const host = `${request.protocol}://${request.headers.host}`
-    const shareUrl = `${host}/c/${shareId}?token=${token}`
-    return reply.send({ shareUrl, shareId })
-  })
+      const host = `${request.protocol}://${request.headers.host}`
+      const shareUrl = `${host}/c/${shareId}?token=${token}`
+      return reply.send({ shareUrl, shareId })
+    })
+  }
 
   // Public read-only capture by shareId (or legacy ObjectId), scoped
   // to an inbox token.
@@ -331,7 +257,7 @@ export default async function apiRoute(fastify) {
 
     // 32-hex shareId → look up by shareId, scoped to inbox token.
     if (typeof id === 'string' && /^[0-9a-f]{32}$/.test(id)) {
-      const readModel = new MongoRequestListReadModel(getDb())
+      const { readModel } = resolveDeps(fastify)
       const doc = await readModel.findByShareId({ inboxToken: token, shareId: id })
       if (!doc) return reply.code(404).send({ error: 'Request not found' })
       return reply.send(doc)
@@ -350,13 +276,116 @@ export default async function apiRoute(fastify) {
     return reply.code(400).send({ error: 'Invalid id' })
   })
 
+  fastify.get('/api/inboxes/:token/stream', async (request, reply) => {
+    const { token } = request.params
+
+    // Connection cap (security limits item 8): a single inbox token
+    // can hold at most SSE_MAX_CONNECTIONS_PER_TOKEN concurrent stream
+    // subscribers. The sixth attempt is rejected with 429 + Retry-After
+    // so a misbehaving client cannot pin the API process on a single
+    // inbox.
+    if (!canAcceptSseConnection(token)) {
+      return reply
+        .code(429)
+        .header('Retry-After', '30')
+        .send({
+          error: `Max ${SSE_MAX_CONNECTIONS_PER_TOKEN} concurrent SSE connections per inbox`,
+          maxConnections: SSE_MAX_CONNECTIONS_PER_TOKEN,
+        })
+    }
+
+    // Register the connection BEFORE writing the response headers.
+    // Otherwise the 5th-and-then-6th-attempt test (and any real client
+    // that opens connections in quick succession) can race: the
+    // server sends the 200 to the Nth client, but the `register`
+    // happens after an `await` further down, so the (N+1)th
+    // `canAcceptSseConnection` check might run before our register
+    // commits. Registering first closes the window — the worst case
+    // is a leaked registry entry if the handler crashes before
+    // hijacking, which the idle timeout cleans up.
+    const connectionId = sseNextConnectionId++
+    registerSseConnection(token, connectionId)
+
+    const readModel = fastify.requestReadModel ?? new MongoRequestListReadModel(getDb())
+
+    reply.hijack()
+    const res = reply.raw
+    res.writeHead(200, {
+      'Content-Type':      'text/event-stream',
+      'Cache-Control':     'no-cache',
+      'Connection':        'keep-alive',
+      'X-Accel-Buffering': 'no',
+    })
+    res.write(': connected\n\n')
+
+    let lastId = null
+    try {
+      const latest = await readModel.findLatest(token)
+      lastId = latest ? latest.id : null
+    } catch (_) {
+      // best-effort: continue with no cursor; the poller will still
+      // try to fetch, and the worst case is one extra "everything"
+      // emit on first poll, which the client already filters by id.
+    }
+
+    let closed = false
+    request.raw.on('close', () => { closed = true })
+
+    const idleTimeoutMs = getSseIdleTimeoutMs()
+    let lastEventAt = Date.now()
+    const idle = setInterval(() => {
+      if (closed) { clearInterval(idle); return }
+      if (Date.now() - lastEventAt < idleTimeoutMs) return
+      closed = true
+      clearInterval(idle)
+      clearInterval(poll)
+      clearInterval(ping)
+      unregisterSseConnection(token, connectionId)
+      try {
+        res.end()
+      } catch (_) { /* socket may already be torn down */ }
+    }, Math.min(5_000, Math.max(20, Math.floor(idleTimeoutMs / 4))))
+
+    const poll = setInterval(async () => {
+      if (closed) { clearInterval(poll); clearInterval(ping); clearInterval(idle); return }
+      try {
+        const newDocs = await readModel.listAfter({
+          inboxToken: token,
+          afterId:    lastId,
+          limit:      20,
+        })
+
+        if (newDocs.length > 0) {
+          lastEventAt = Date.now()
+          for (const dto of newDocs) {
+            if (closed) break
+            lastId = dto.id
+            res.write(`data: ${JSON.stringify({ type: 'request', data: dto })}\n\n`)
+          }
+        }
+      } catch (_) { /* DB error — keep streaming, client will retry */ }
+    }, SSE_POLL_INTERVAL_MS)
+
+    const ping = setInterval(() => {
+      if (closed) { clearInterval(ping); return }
+      lastEventAt = Date.now()
+      try { res.write(': ping\n\n') } catch (_) {}
+    }, SSE_PING_INTERVAL_MS)
+
+    request.raw.on('close', () => {
+      closed = true
+      clearInterval(poll)
+      clearInterval(ping)
+      clearInterval(idle)
+      unregisterSseConnection(token, connectionId)
+      if (!res.destroyed) res.end()
+    })
+  })
+
   fastify.get('/api/inboxes/:token', async (request, reply) => {
     const { token } = request.params
-    const db = getDb()
-    const inbox = await db.collection('inboxes').findOne(
-      { token },
-      { projection: { _id: 0 } },
-    )
+    const { inboxRepo } = resolveDeps(fastify)
+    const inbox = await inboxRepo.findByToken(token)
     if (!inbox) return reply.code(404).send({ error: 'Inbox not found' })
     return reply.send({
       token,
@@ -370,21 +399,18 @@ export default async function apiRoute(fastify) {
 
   fastify.get('/api/inboxes/:token/schema-history', async (request, reply) => {
     const { token } = request.params
-    const db = getDb()
-    const inbox = await db.collection('inboxes').findOne(
-      { token },
-      { projection: { _id: 0 } },
-    )
+    const { inboxRepo } = resolveDeps(fastify)
+    const inbox = await inboxRepo.findByToken(token)
     if (!inbox) return reply.code(404).send({ error: 'Inbox not found' })
 
-    const { getSchemaHistory } = makeUseCases()
+    const { getSchemaHistory } = makeUseCases(fastify)
     const result = await getSchemaHistory.execute({ inboxToken: token })
     return reply.send(result)
   })
 
   fastify.put('/api/inboxes/:token/response', async (request, reply) => {
     const { token } = request.params
-    const { configureResponse } = makeUseCases()
+    const { configureResponse } = makeUseCases(fastify)
     const result = await configureResponse.execute({ token, responseConfig: request.body ?? null })
 
     if (result.outcome === Outcome.NOT_FOUND) return reply.code(404).send({ error: 'Inbox not found' })
@@ -394,7 +420,7 @@ export default async function apiRoute(fastify) {
 
   fastify.delete('/api/inboxes/:token/response', async (request, reply) => {
     const { token } = request.params
-    const { configureResponse } = makeUseCases()
+    const { configureResponse } = makeUseCases(fastify)
     const result = await configureResponse.execute({ token, responseConfig: null })
 
     if (result.outcome === Outcome.NOT_FOUND) return reply.code(404).send({ error: 'Inbox not found' })
@@ -408,7 +434,7 @@ export default async function apiRoute(fastify) {
   fastify.put('/api/inboxes/:token/forward', async (request, reply) => {
     const { token } = request.params
     const body = request.body ?? {}
-    const { configureForward } = makeUseCases()
+    const { configureForward } = makeUseCases(fastify)
     const result = await configureForward.execute({
       token,
       forwardTo: body.forwardTo ?? null,
@@ -421,7 +447,7 @@ export default async function apiRoute(fastify) {
 
   fastify.delete('/api/inboxes/:token/forward', async (request, reply) => {
     const { token } = request.params
-    const { configureForward } = makeUseCases()
+    const { configureForward } = makeUseCases(fastify)
     const result = await configureForward.execute({ token, forwardTo: null })
 
     if (result.outcome === Outcome.NOT_FOUND) return reply.code(404).send({ error: 'Inbox not found' })
@@ -433,8 +459,11 @@ export default async function apiRoute(fastify) {
   // Useful when the inspector was opened by URL and the original
   // plaintext was lost (no localStorage copy available).
   fastify.post('/api/inboxes/:token/regenerate-mcp', async (request, reply) => {
+    if (!mcpEnabled) {
+      return reply.code(404).send({ error: 'Not found' })
+    }
     const { token } = request.params
-    const { mintMcpToken } = makeUseCases()
+    const { mintMcpToken } = makeUseCases(fastify)
     try {
       const { mcpToken } = await mintMcpToken.execute({ inboxToken: token })
       return reply.send({ token, mcp_token: mcpToken })

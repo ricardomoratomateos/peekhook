@@ -1,21 +1,19 @@
-import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest'
+import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import Fastify from 'fastify'
 import { startMongo, getTestDb, stopMongo } from '../../../test/helpers/mongoMemory.js'
 import { MongoInboxRepository } from '../../inbox/infra/persistence/MongoInboxRepository.js'
 import { MongoCapturedRequestRepository } from '../../inbox/infra/persistence/MongoCapturedRequestRepository.js'
+import { MongoRequestListReadModel } from '../../inbox/infra/persistence/MongoRequestListReadModel.js'
 import { SandboxInbox } from '../../inbox/domain/SandboxInbox.js'
 import { CapturedRequest } from '../../inbox/domain/CapturedRequest.js'
 import { MongoMcpAuthRepository } from '../infra/MongoMcpAuthRepository.js'
+import { MongoRequestSearchReadModel } from '../infra/MongoRequestSearchReadModel.js'
+import { MongoMcpAuditLog } from '../infra/persistence/MongoMcpAuditLog.js'
+import { InMemoryMcpRateLimiter } from '../infra/InMemoryMcpRateLimiter.js'
 import { MintMcpToken } from '../app/MintMcpToken.js'
 import { registerMcpRoutes } from '../infra/mcp.http.js'
 
-const mockDb = vi.hoisted(() => ({ db: null }))
-
-vi.mock('../../shared/db.js', () => ({
-  connectDb: async () => {},
-  getDb:     () => mockDb.db,
-  closeDb:   async () => {},
-}))
+const mockDb = { db: null }
 
 describe('mcp HTTP transport (Fastify inject + memory Mongo)', () => {
   let server
@@ -25,12 +23,17 @@ describe('mcp HTTP transport (Fastify inject + memory Mongo)', () => {
   beforeAll(async () => {
     const db = await startMongo()
     mockDb.db = db
+    const mcpAuth            = new MongoMcpAuthRepository(db)
+    const requestReadModel   = new MongoRequestListReadModel(db)
+    const mcpSearchReadModel = new MongoRequestSearchReadModel(db)
+    const mcpAuditLog        = new MongoMcpAuditLog(db)
+    const mcpRateLimiter     = new InMemoryMcpRateLimiter()
 
     const inbox = SandboxInbox.create()
     await new MongoInboxRepository(db).insert(inbox)
     inboxToken = inbox.token
 
-    const { mcpToken: minted } = await new MintMcpToken({ mcpAuth: new MongoMcpAuthRepository(db) })
+    const { mcpToken: minted } = await new MintMcpToken({ mcpAuth })
       .execute({ inboxToken })
     mcpToken = minted
 
@@ -70,7 +73,13 @@ describe('mcp HTTP transport (Fastify inject + memory Mongo)', () => {
     }))
 
     server = Fastify({ logger: false })
-    await server.register(registerMcpRoutes)
+    await server.register(registerMcpRoutes, {
+      mcpAuth,
+      requestReadModel,
+      mcpSearchReadModel,
+      mcpAuditLog,
+      mcpRateLimiter,
+    })
     await server.ready()
 
     return { id1: id1.toString(), id2: id2.toString() }

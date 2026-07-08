@@ -63,4 +63,45 @@ export class MongoRequestListReadModel extends RequestListReadModel {
     const doc = await this.col.findOne({ inboxToken, shareId })
     return doc ? toDto(doc) : null
   }
+
+  /**
+   * Cursor advance for the SSE poller. `afterId === null` means
+   * "no lower bound" (i.e. we want the oldest unread event from the
+   * start of the stream), so the filter is built without an `_id`
+   * predicate. Otherwise we constrain with `_id > ObjectId(afterId)`.
+   *
+   * The result is sorted ASCENDING by `_id` so the SSE handler can
+   * forward events in the order they were captured. Limit defaults
+   * to 20 (the SSE poll batch size) and is hard-capped at 200 so a
+   * misconfigured caller cannot read the entire collection in one
+   * round-trip.
+   */
+  async listAfter({ inboxToken, afterId, limit = 20 }) {
+    const cap = Math.min(Number(limit) || 20, 200)
+    const filter = { inboxToken }
+    if (typeof afterId === 'string' && ObjectId.isValid(afterId)) {
+      filter._id = { $gt: new ObjectId(afterId) }
+    }
+
+    const docs = await this.col
+      .find(filter)
+      .sort({ _id: 1 })
+      .limit(cap)
+      .toArray()
+
+    return docs.map(toDto)
+  }
+
+  /**
+   * Most recent capture for the inbox, projected to the DTO shape.
+   * Returns null when the inbox has no captures. Used by the SSE
+   * handler to seed `lastId` on connection open so the first poll
+   * only emits events captured after the moment the inspector
+   * loaded.
+   */
+  async findLatest(inboxToken) {
+    const doc = await this.col
+      .findOne({ inboxToken }, { sort: { _id: -1 } })
+    return doc ? toDto(doc) : null
+  }
 }

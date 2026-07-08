@@ -1,9 +1,4 @@
 import crypto from 'node:crypto'
-import { getDb } from '../../shared/db.js'
-import { MongoMcpAuthRepository } from './MongoMcpAuthRepository.js'
-import { MongoRequestListReadModel } from '../../inbox/infra/persistence/MongoRequestListReadModel.js'
-import { MongoRequestSearchReadModel } from './MongoRequestSearchReadModel.js'
-import { MongoMcpAuditLog } from './persistence/MongoMcpAuditLog.js'
 import { InMemoryMcpRateLimiter } from './InMemoryMcpRateLimiter.js'
 import { provideTools } from './provideTools.js'
 import { sanitizeParamsForAudit } from '../app/SafeResponse.js'
@@ -59,9 +54,15 @@ import { sanitizeParamsForAudit } from '../app/SafeResponse.js'
  *
  * @param {import('fastify').FastifyInstance} fastify
  * @param {{
- *   rateLimiter?: import('../domain/McpRateLimiter.js').McpRateLimiter,
- *   auditLog?:    import('../domain/McpAuditLog.js').McpAuditLog,
- * }} [deps] Optional injection for tests. Production wires defaults.
+ *   mcpRateLimiter:     import('../domain/McpRateLimiter.js').McpRateLimiter,
+ *   mcpAuditLog:        import('../domain/McpAuditLog.js').McpAuditLog,
+ *   mcpAuth:            import('../domain/McpAuthRepository.js').McpAuthRepository,
+ *   requestReadModel:   import('../../inbox/domain/RequestListReadModel.js').RequestListReadModel,
+ *   mcpSearchReadModel: import('../domain/RequestSearchReadModel.js').RequestSearchReadModel,
+ * }} deps Required injection. Production wires Mongo adapters via
+ *   `buildApp({ mcpAuth, requestReadModel, mcpSearchReadModel, mcpAuditLog, mcpRateLimiter })`;
+ *   the local SQLite entry point (`cli.js`) wires the SQLite adapters.
+ *   No storage-agnostic fallback — every backend passes its own deps.
  */
 export async function registerMcpRoutes(fastify, deps = {}) {
   const allowedOrigin = (() => {
@@ -69,8 +70,20 @@ export async function registerMcpRoutes(fastify, deps = {}) {
     try { return new URL(fromEnv).origin } catch { return null }
   })()
 
-  const rateLimiter = deps.rateLimiter ?? new InMemoryMcpRateLimiter()
-  const auditLog    = deps.auditLog    ?? new MongoMcpAuditLog(getDb())
+  const {
+    mcpRateLimiter,
+    mcpAuditLog,
+    mcpAuth,
+    requestReadModel,
+    mcpSearchReadModel,
+  } = deps
+  const auditLog    = mcpAuditLog
+  const rateLimiter = mcpRateLimiter
+  if (!rateLimiter || !auditLog || !mcpAuth || !requestReadModel || !mcpSearchReadModel) {
+    throw new Error(
+      'registerMcpRoutes: mcpRateLimiter, mcpAuditLog, mcpAuth, requestReadModel, mcpSearchReadModel are all required',
+    )
+  }
 
   fastify.addContentTypeParser('application/json', { parseAs: 'string' }, (_req, body, done) => {
     done(null, body)
@@ -121,7 +134,7 @@ export async function registerMcpRoutes(fastify, deps = {}) {
       return reply.code(202).send()
     }
 
-    const auth = await resolveAuth(request.headers.authorization)
+    const auth = await resolveAuth(request.headers.authorization, mcpAuth)
     if (!auth.ok) {
       return reply
         .code(401)
@@ -144,10 +157,7 @@ export async function registerMcpRoutes(fastify, deps = {}) {
         })
     }
 
-    const db          = getDb()
-    const readModel   = new MongoRequestListReadModel(db)
-    const searchModel = new MongoRequestSearchReadModel(db)
-    const surface     = provideTools({ readModel, searchModel })
+    const surface = provideTools({ readModel: requestReadModel, searchModel: mcpSearchReadModel })
 
     if (method === 'initialize') {
       return reply.send({
@@ -244,8 +254,11 @@ function originAllowed(origin, configured) {
  * request path so the plaintext never leaves the inbound boundary.
  * `tokenHash` is the key used by both the rate limiter and the audit
  * log — neither ever sees the plaintext.
+ *
+ * @param {string|undefined} authorizationHeader
+ * @param {import('../domain/McpAuthRepository.js').McpAuthRepository} authRepo
  */
-async function resolveAuth(authorizationHeader) {
+async function resolveAuth(authorizationHeader, authRepo) {
   if (typeof authorizationHeader !== 'string' || authorizationHeader.length === 0) {
     return { ok: false, reason: 'missing Authorization: Bearer <token> header' }
   }
@@ -255,8 +268,7 @@ async function resolveAuth(authorizationHeader) {
   if (candidate.length === 0) return { ok: false, reason: 'Bearer token is empty' }
 
   const hashHex = crypto.createHash('sha256').update(candidate).digest('hex')
-  const repo    = new MongoMcpAuthRepository(getDb())
-  const inbox   = await repo.findByMcpTokenHash(hashHex)
+  const inbox   = await authRepo.findByMcpTokenHash(hashHex)
   if (!inbox) return { ok: false, reason: 'invalid token' }
   if (!inbox.token) return { ok: false, reason: 'token resolves to an inbox without an id' }
   return { ok: true, inboxToken: inbox.token, tokenHash: hashHex }

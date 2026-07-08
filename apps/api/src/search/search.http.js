@@ -6,11 +6,15 @@ import { SearchEvents } from './app/SearchEvents.js'
 /**
  * Route handler factory for `GET /api/inboxes/:token/requests/search`.
  *
- * Mounted by the orchestrator alongside the existing routes in
- * `apps/api/src/infra/http/apiRoute.js`. The single-argument factory
- * shape matches Fastify plugin conventions; dependencies are sourced
- * via `getDb()` on each request — same lazy-init pattern that
- * `apiRoute.js` uses — so unit/integration tests can mock the db.
+ * Mounted by the orchestrator (`buildApp`) alongside the existing
+ * routes in `apps/api/src/infra/http/apiRoute.js`. The
+ * two-argument factory shape matches Fastify plugin conventions;
+ * dependencies are sourced in this order:
+ *   1. Explicit `opts.<dep>` (preferred path; production wires
+ *      this in `buildApp`).
+ *   2. `fastify.<dep>` decoration (defensive; same source as opts).
+ *   3. A fresh `getDb()`-sourced Mongo adapter (test path; matches
+ *      the existing `vi.mock('../shared/db.js')` pattern).
  *
  * Error mapping:
  *   - inbox token not found         → 404 { error }
@@ -18,15 +22,19 @@ import { SearchEvents } from './app/SearchEvents.js'
  *   - everything else               → 200 [CapturedRequest DTOs]
  *
  * @param {import('fastify').FastifyInstance} fastify
+ * @param {{
+ *   inboxRepo?: import('../inbox/domain/InboxRepository.js').InboxRepository,
+ *   searchRepo?: import('./domain/SearchEventsRepository.js').SearchEventsRepository,
+ * }} [opts]
  */
-export async function registerSearchRoutes(fastify) {
+export async function registerSearchRoutes(fastify, opts = {}) {
   fastify.get('/api/inboxes/:token/requests/search', async (request, reply) => {
     const { token } = request.params
     const { regex, field, limit, before } = request.query
 
     const db      = getDb()
-    const inboxes = new MongoInboxRepository(db)
-    const repo    = new MongoRegexSearchRepository(db)
+    const inboxes = opts.inboxRepo ?? fastify.inboxRepo  ?? new MongoInboxRepository(db)
+    const repo    = opts.searchRepo ?? fastify.searchRepo ?? new MongoRegexSearchRepository(db)
     const search  = new SearchEvents({ repo })
 
     const inbox = await inboxes.findByToken(token)
