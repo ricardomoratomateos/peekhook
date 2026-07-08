@@ -21,15 +21,15 @@ function getReplayRateLimiter() {
 }
 
 /**
- * Local-only entry point for the peekhook binary (`peektunnel`).
+ * Local-only entry point for the peekhook binary (`peekgrok`).
  *
  * The cloud entry point (`index.js`) wires Mongo adapters; this one wires
  * SQLite adapters against a `bun:sqlite` database that lives at
- * `${dataDir}/peektunnel.db`. Every domain port is implemented by an
+ * `${dataDir}/peekgrok.db`. Every domain port is implemented by an
  * adapter in `infra/persistence/`; the `app.js` factory composes them
  * into the same Fastify app the cloud runs.
  *
- * The `db` is passed in by the caller (the peektunnel binary) so this
+ * The `db` is passed in by the caller (the peekgrok binary) so this
  * module does not import `bun:sqlite` at the top level — the
  * `apps/api` package stays Node-compatible for its existing test suite.
  *
@@ -92,7 +92,7 @@ export async function startLocalServer({ port, db, dataDir, webDist, corsOrigin 
   if (corsOrigin) {
     // Override the CORS origin registered by buildApp. The default
     // (http://localhost:5173) is the Vite dev server, which is
-    // what peektunnel users will typically pair this with.
+    // what peekgrok users will typically pair this with.
     app.log.info(`CORS origin: ${corsOrigin}`)
   }
 
@@ -159,8 +159,8 @@ export async function startLocalServer({ port, db, dataDir, webDist, corsOrigin 
   }
 
   await app.listen({ port, host: '127.0.0.1' })
-  app.log.info(`peektunnel local server listening on http://127.0.0.1:${port}`)
-  if (dataDir) app.log.info(`data: ${dataDir}/peektunnel.db`)
+  app.log.info(`peekgrok local server listening on http://127.0.0.1:${port}`)
+  if (dataDir) app.log.info(`data: ${dataDir}/peekgrok.db`)
 
   return app
 }

@@ -18,9 +18,9 @@ const customWebDist = (() => {
 })()
 
 if (cmd !== 'listen') {
-  console.error('Usage: peektunnel listen <port> [--no-tunnel] [--web-dist <path>]')
-  console.error('Example: peektunnel listen 3000')
-  console.error('         peektunnel listen 3000 --no-tunnel  # skip ngrok, dev mode')
+  console.error('Usage: peekgrok listen <port> [--no-tunnel] [--web-dist <path>]')
+  console.error('Example: peekgrok listen 3000')
+  console.error('         peekgrok listen 3000 --no-tunnel  # skip ngrok, dev mode')
   process.exit(1)
 }
 
@@ -47,13 +47,13 @@ function findWebDist() {
 }
 const webDist = findWebDist()
 
-console.log('peektunnel v0.1.0')
+console.log('peekgrok v0.1.0')
 console.log(`  upstream:  http://localhost:${upstreamPort}`)
-console.log(`  data:      ${dataDir}/peektunnel.db`)
+console.log(`  data:      ${dataDir}/peekgrok.db`)
 if (webDist) console.log(`  web:       ${webDist}`)
 else          console.log(`  web:       (not found — UI will 404; pass --web-dist or set PEEKHOOK_WEB_DIST)`)
 
-const db = new Database(join(dataDir, 'peektunnel.db'))
+const db = new Database(join(dataDir, 'peekgrok.db'))
 
 let tunnel = null
 if (!noTunnel) {

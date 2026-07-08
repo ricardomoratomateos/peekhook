@@ -4,11 +4,11 @@
   "private": true,
   "type": "module",
   "bin": {
-    "peektunnel": "./bin/peektunnel.js"
+    "peekgrok": "./bin/peekgrok.js"
   },
   "scripts": {
-    "dev": "bun --watch bin/peektunnel.js",
-    "build": "bun -e \"const t=process.arch==='arm64'?'bun-darwin-arm64':process.arch==='x64'?'bun-darwin-x64':'';if(!t){console.error('unsupported arch:',process.arch);process.exit(1)}require('child_process').execSync('bun build --compile --minify --target='+t+' ./bin/peektunnel.js --outfile=dist/peektunnel',{stdio:'inherit'})\"",
+    "dev": "bun --watch bin/peekgrok.js",
+    "build": "bun -e \"const t=process.arch==='arm64'?'bun-darwin-arm64':process.arch==='x64'?'bun-darwin-x64':'';if(!t){console.error('unsupported arch:',process.arch);process.exit(1)}require('child_process').execSync('bun build --compile --minify --target='+t+' ./bin/peekgrok.js --outfile=dist/peekgrok',{stdio:'inherit'})\"",
     "build:all": "bun run scripts/build-all.js"
   },
   "dependencies": {

@@ -8,7 +8,7 @@
  * `Authorization: Bearer <token>`.
  *
  * Runs under Bun's test runner (which has `bun:sqlite` available and
- * supports the SQLite adapters used by `peektunnel`). Vitest runs
+ * supports the SQLite adapters used by `peekgrok`). Vitest runs
  * under Node and does NOT have `bun:sqlite` — the test is placed
  * under `tests/` (outside the vitest include glob) so vitest never
  * tries to load it. To execute:
