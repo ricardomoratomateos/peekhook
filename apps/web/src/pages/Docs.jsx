@@ -24,7 +24,7 @@ const C = {
   red: '#f87171',
 }
 
-const SITE = 'https://peekhook.dev'
+const SITE = (import.meta.env.VITE_WEB_URL || 'https://peekhook.dev').replace(/\/$/, '')
 const GITHUB = 'https://github.com/ricardomoratomateos/peekhook'
 
 const NAV = [

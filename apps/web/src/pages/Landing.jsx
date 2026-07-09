@@ -26,6 +26,7 @@ const C = {
 }
 
 const GITHUB = 'https://github.com/ricardomoratomateos/peekhook'
+const SITE = (import.meta.env.VITE_WEB_URL || 'https://peekhook.dev').replace(/\/$/, '')
 
 // ---------------------------------------------------------------- css
 
@@ -674,7 +675,7 @@ export default function Landing() {
               <div style={s.termHead}><span>terminal</span></div>
               <div style={s.termBody}>
                 <div><span style={s.prompt}>$</span> claude mcp add --transport http \</div>
-                <div>&nbsp;&nbsp;&nbsp;&nbsp;peekhook https://peekhook.dev/mcp</div>
+                <div>&nbsp;&nbsp;&nbsp;&nbsp;peekhook {SITE}/mcp</div>
                 <div style={s.tDim}># auth: Authorization: Bearer &lt;mcp_token&gt;</div>
                 <div><span style={s.tOk}>✓</span> connected · <span style={s.tStrong}>5 tools</span></div>
                 <div style={s.tDim}>&nbsp;&nbsp;list_events · get_event · search_events</div>
@@ -923,7 +924,7 @@ export default function Landing() {
           </div>
           <div style={s.footerBottom}>
             <span>no signup · no telemetry · no cookies · inboxes self-destruct in 7 days</span>
-            <span>peekhook.dev</span>
+            <span>{SITE.replace(/^https?:\/\//, '')}</span>
           </div>
         </footer>
       </div>
