@@ -12,8 +12,8 @@
     "build:all": "bun run scripts/build-all.js"
   },
   "dependencies": {
-    "@peekhook/api": "*",
-    "@peekhook/web": "*",
+    "@peekhook/api": "workspace:*",
+    "@peekhook/web": "workspace:*",
     "fastify": "^4.28.0"
   }
 }

@@ -49,6 +49,11 @@ Key routing rules:
 - Resume context → /context-restore
 
 ## Repo conventions
+- Package manager: pnpm workspaces (`pnpm-workspace.yaml`,
+  `packageManager` pinned in root `package.json`). Build scripts are
+  blocked by default; allowlist via `pnpm.onlyBuiltDependencies`
+  (currently `esbuild`, `mongodb-memory-server`). CLI still runs on
+  Bun at runtime.
 - ESM throughout (`type: "module"` in both apps)
 - Hex pattern: `domain/`, `app/`, `infra/` per use case
 - API path: `/api/inboxes/...`. Ingest: `/i/:token`

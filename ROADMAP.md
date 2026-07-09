@@ -6,19 +6,25 @@ webhooks fast without configuring anything, and the current
 incumbent (webhook.site) hasn't shipped serious new features
 in years.
 
-## Status (v1.0)
+## Status (v1.3)
 
-- **16 / 16 features shipped** end-to-end (14 candidate + 2 net-new).
-- **Repo published**: `github.com/ricardomoratomateos/peekhook`
-- **Branch**: `main` (38 commits pushed, single default branch).
-- **Backend tests**: 136 / 136 passing (Vitest + mongodb-memory-server).
-- **Frontend tests**: 0 (Vitest+jsdom not yet installed in `apps/web`).
-- **Local stack**: Mongo in Docker (`peekhook-mongo`), API on
-  `:3000`, Vite dev on `:5173`. The same stack runs under
-  `docker compose up` for self-host.
+- **All 16 candidate features + 16 security/business limits shipped**,
+  plus the v1.3 usability batch (replay-to-forward + edit-and-replay,
+  mock-reply delay, GET capture, export, clear / delete-selected,
+  binary-safe sniffer + noise filter, shareable peekgrok links).
+- **Repo published**: `github.com/ricardomoratomateos/peekhook`, branch `main`.
+- **Backend tests**: 340 / 340 (Vitest + mongodb-memory-server) across
+  39 files, plus `bun:sqlite` / proxy integration tests under
+  `apps/api/tests` and `apps/cli/tests`.
+- **Frontend tests**: still the main gap — only `lib/diff.spec.js` in
+  `apps/web`; the ~11 inspector components are unverified.
+- **Package manager**: pnpm 10 (`pnpm-workspace.yaml` + `pnpm-lock.yaml`).
+- **Hosted instance**: live at `peekhook.0311b.com` (interim host until
+  `peekhook.dev` is bought). Run locally with `docker compose up`
+  (mongo + api + web) or the `peekgrok` CLI (SQLite + ngrok).
 
-The 16-item feature plan is complete. Future work is open-ended
-polish, not feature delivery.
+The feature plan is complete; remaining work is polish (frontend tests,
+NL-parser v2) and finishing the deploy/domain move to `peekhook.dev`.
 
 ## Direction
 
@@ -44,10 +50,10 @@ its weight against the curl-then-look-at-the-Inspector flow.
 - **Storage**: Mongo TTL 7 days (hosted) or `bun:sqlite` file
   in `~/.peekhook` (local). Single database either way.
 - **Auth**: none, ever, unless pull justifies it.
-- **Hosting (planned)**: API on fly.io free tier, web on
-  Cloudflare Pages. Not yet wired.
-- **Domain (planned)**: `peekhook.dev` via Porkbun, $1.11/yr.
-  Not yet bought.
+- **Hosting**: interim instance live at `peekhook.0311b.com`.
+  Target: API on fly.io free tier, web on Cloudflare Pages.
+- **Domain**: interim `peekhook.0311b.com`; `peekhook.dev`
+  (via Porkbun, ~$1.11/yr) still to be bought, then DNS cut over.
 - **No Slack / Discord / Teams / email notifiers in MVP**.
   Browser notifications + MCP reach the same audience without
   wiring four more integrations.
@@ -55,23 +61,29 @@ its weight against the curl-then-look-at-the-Inspector flow.
 ## What ships today (user-visible surface)
 
 - Inbox create + auto-delete after 7 days (TTL index).
-- Capture POST/PUT/PATCH/DELETE at `/i/:token`. GET returns 405
-  (reserved for the Inspector SPA).
+- Capture POST/PUT/PATCH/DELETE at `/i/:token`, plus non-browser
+  GET (OAuth callbacks, verification pings). A browser GET
+  (`Accept: text/html`) returns 405, reserved for the Inspector SPA.
 - Live SSE stream of new captures into the request list.
 - Inspector UI: method, headers, query, body, IP, size, content-type
   for each captured request. Method chip + path + timestamp.
-- Static mock reply (status + content-type + body) configurable
+- Static mock reply (status + content-type + body, plus an optional
+  0–30s response delay to simulate a slow upstream) configurable
   per inbox.
 - "Copy as curl" button on every capture + the empty state.
 - Inspector features: search input (regex + field selector +
   natural-language examples), schema sparkline sidebar panel
   (5s poll), MCP token card (with copy + curl-style usage
   snippet + regenerate button), two-event diff side-by-side
-  (LCS body + header diff), replay button (mock-reply-only,
-  1/min rate limit), schema-drift callout chip on DetailPanel,
-  fixture buttons in EmptyState (Stripe / GitHub / Linear /
-  generic), browser notifications banner (in-tab Notification
-  API, no Service Worker).
+  (LCS body + header diff), replay button (against the mock reply
+  or the inbox's configured forward target, with optional
+  method/body edits; 1/min rate limit), schema-drift callout chip
+  on DetailPanel, fixture buttons in EmptyState (Stripe / GitHub /
+  Linear / generic), browser notifications banner (in-tab
+  Notification API, no Service Worker).
+- Capture management: per-row multi-select (select-all toggle),
+  export selected or all captures as JSON, delete selected, and
+  clear-all (which also frees the 1,000-capture cap on the same URL).
 - Geist Sans / Geist Mono / Material Symbols Outlined via
   Google Fonts in `index.html`.
 - Dev proxy: `/api/*` and `/i/<token>` (capture) forwarded to
@@ -85,20 +97,22 @@ its weight against the curl-then-look-at-the-Inspector flow.
 
 ### Concrete next steps (suggested priority)
 
-1. **Frontend tests** (Vitest + jsdom) — 0 tests in `apps/web`.
-   The 11 inspector components are unverified. Roughly one
-   session: install vitest+jsdom+RTL, write 2-3 smoke tests per
-   component.
+1. **Frontend tests** (Vitest + jsdom) — only `lib/diff.spec.js`
+   in `apps/web`; the ~11 inspector components are unverified.
+   Roughly one session: install vitest+jsdom+RTL, write 2-3 smoke
+   tests per component.
 2. **NL parser v2** — current heuristic regex-on-body returns 0
    matches for "stripe events" because the Stripe fixture body
    doesn't contain the word "stripe". Route provider mentions
    to field-shape fingerprints (same logic that powers #8
    `explain_event`) so "stripe events" matches Stripe bodies
    even when the body text doesn't contain the word.
-3. **Domain** — buy `peekhook.dev` on Porkbun ($1.11/yr).
-4. **Deploy** — `docker compose build` already works locally;
-   wire the same image to fly.io (API) + Cloudflare Pages
-   (web), point DNS at `peekhook.dev`. One session.
+3. **Domain** — buy `peekhook.dev` on Porkbun ($1.11/yr) and cut
+   DNS over from the interim `peekhook.0311b.com`.
+4. **Deploy** — a hosted instance already runs at
+   `peekhook.0311b.com`; finish wiring the reproducible image
+   (fly.io API + Cloudflare Pages web) and repoint DNS to
+   `peekhook.dev`.
 5. **Open questions** — three architectural decisions pending
    answer (MCP auth shape, fixture buttons on landing, self-host
    shape). See "Open questions" section below.
@@ -207,9 +221,11 @@ end-to-end with tests; 319 / 319 backend tests passing.
   and Insomnia proved low adoption. Not our fight.
 - **Email inbound** (`xxx@peekhook.dev` → captured event). Clear
   demand path; cheap to add when asked.
-- **Tunnel-style capture-and-forward** (`/i/<token>` that also
-  POSTs to a configured destination without an SSH agent).
-  Useful but adds state for a feature nobody has asked for.
+
+> **Reversed:** *Tunnel-style capture-and-forward* used to live here.
+> It shipped in v1.2 as the `peekgrok --to` sniffer (transparent
+> reverse proxy that captures + forwards every request/response),
+> and v1.3 added replay-to-forward on top. No longer a "won't build".
 
 ## Candidate features (the 14)
 

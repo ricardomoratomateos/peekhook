@@ -2,7 +2,7 @@
 
 A free, anonymous webhook inspector. No signup, expires in 7 days.
 
-Send any HTTP request to `peekhook.dev/i/<token>`. The request
+Send any HTTP request to `peekhook.0311b.com/i/<token>`. The request
 turns up live in the inspector UI: method, headers, query, body,
 IP, content-type, size. Configure a custom mock reply (status,
 content-type, body) to simulate downstream failures and test
@@ -22,9 +22,9 @@ Two ways to run it:
 ## Quick start
 
 ```bash
-# requires Node 20+, MongoDB 7+
-npm install
-npm run dev
+# requires Node 20+, pnpm 10+, MongoDB 7+
+pnpm install
+pnpm dev
 ```
 
 - Frontend: http://localhost:5173
@@ -146,7 +146,7 @@ peekgrok reserves three path prefixes on the tunneled proxy —
 inspector instead of forwarding them (everything else still reaches
 your app). If your app uses one of those prefixes it would be
 shadowed; peekgrok prints the reserved set at startup. On the hosted
-instance, share links use the request host (e.g. `peekhook.dev`).
+instance, share links use the request host (e.g. `peekhook.0311b.com`).
 
 ### Flags
 
@@ -177,7 +177,7 @@ Cross-compile all targets (darwin/linux/windows) with
 
 ## Architecture
 
-npm workspaces monorepo with three apps, each backend module
+pnpm workspaces monorepo with three apps, each backend module
 layered per use case (domain → app → infra). Each use case
 (Capture, Reply, List, …) keeps its domain aggregate, ports, and
 use case in `apps/api/src`, and the inspector UI is wired straight
@@ -254,8 +254,8 @@ export, clear-inbox, binary-safe sniffer + noise filter).
 340 / 340 backend tests passing across 39 files. Two ways to run it: `docker compose up`
 (mongo + api + web with healthchecks and an SSE-friendly
 nginx in front of the web bundle), or the `peekgrok` local
-CLI (SQLite + ngrok, no Mongo). Public deploy — fly.io (API)
-+ Cloudflare Pages (web) + `peekhook.dev` domain — is the
-next concrete step; not yet wired. See
-[ROADMAP.md](./ROADMAP.md) for the full security audit and
-the open questions.
+CLI (SQLite + ngrok, no Mongo). A hosted instance runs at
+`peekhook.0311b.com` (interim host); the move to the final
+`peekhook.dev` domain (fly.io API + Cloudflare Pages web) is
+still in progress. See [ROADMAP.md](./ROADMAP.md) for the full
+security audit and the open questions.

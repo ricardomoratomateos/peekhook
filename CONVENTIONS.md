@@ -62,7 +62,7 @@ wrap validation failure in an `Outcome.INVALID` pattern (see
 
 ## Tests
 
-- **Framework**: Vitest. Run with `npm test` from `apps/api`.
+- **Framework**: Vitest. Run with `pnpm test` from `apps/api` (or `pnpm --filter @peekhook/api test` from the root).
   - **Flaky under load**: the `WorkerThreadRunner` scripting-sandbox
     tests assert a 200ms wall-clock timeout. Under full file
     parallelism on a busy machine (or a loaded CI runner) worker

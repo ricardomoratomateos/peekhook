@@ -2,15 +2,19 @@
   "name": "peekhook",
   "private": true,
   "version": "0.1.0",
-  "workspaces": ["apps/*"],
+  "packageManager": "pnpm@10.32.1",
   "scripts": {
-    "dev": "concurrently -n api,web -c blue,green \"npm run dev:api\" \"npm run dev:web\"",
-    "dev:api": "npm run dev -w @peekhook/api",
-    "dev:web": "npm run dev -w @peekhook/web",
-    "build": "npm run build -w @peekhook/web",
-    "start": "npm run start -w @peekhook/api"
+    "dev": "concurrently -n api,web -c blue,green \"pnpm run dev:api\" \"pnpm run dev:web\"",
+    "dev:api": "pnpm --filter @peekhook/api dev",
+    "dev:web": "pnpm --filter @peekhook/web dev",
+    "build": "pnpm --filter @peekhook/web build",
+    "start": "pnpm --filter @peekhook/api start",
+    "test": "pnpm --filter @peekhook/api test"
   },
   "devDependencies": {
     "concurrently": "^9.0.0"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": ["esbuild", "mongodb-memory-server"]
   }
 }
