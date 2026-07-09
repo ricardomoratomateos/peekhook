@@ -2,10 +2,12 @@ FROM node:20-alpine AS dev
 
 WORKDIR /app
 
-COPY package.json package-lock.json ./
+RUN corepack enable
+
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY apps/api/package.json ./apps/api/package.json
 COPY apps/web/package.json ./apps/web/package.json
-RUN npm ci --include=dev
+RUN pnpm install --frozen-lockfile
 
 COPY apps/api/src ./apps/api/src
 
@@ -20,10 +22,14 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-COPY package.json package-lock.json ./
+RUN corepack enable
+
+ENV CI=true
+
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY apps/api/package.json ./apps/api/package.json
 COPY apps/web/package.json ./apps/web/package.json
-RUN npm ci --include=dev && npm prune --omit=dev
+RUN pnpm install --frozen-lockfile && pnpm prune --prod
 
 COPY apps/api/src ./apps/api/src
 

@@ -2,10 +2,12 @@ FROM node:20-alpine AS dev
 
 WORKDIR /app
 
-COPY package.json package-lock.json ./
+RUN corepack enable
+
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY apps/api/package.json ./apps/api/package.json
 COPY apps/web/package.json ./apps/web/package.json
-RUN npm ci --include=dev
+RUN pnpm install --frozen-lockfile
 
 COPY apps/web ./apps/web
 
@@ -24,17 +26,20 @@ ARG VITE_WEB_URL=""
 
 WORKDIR /app
 
-COPY package.json package-lock.json ./
+RUN corepack enable
+
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY apps/api/package.json ./apps/api/package.json
 COPY apps/web/package.json ./apps/web/package.json
-RUN npm ci --include=dev
+RUN pnpm install --frozen-lockfile
 
 COPY apps/web ./apps/web
 
 WORKDIR /app/apps/web
 ENV VITE_API_URL=$VITE_API_URL
 ENV VITE_WEB_URL=$VITE_WEB_URL
-RUN node /app/node_modules/vite/bin/vite.js build
+ENV CI=true
+RUN pnpm build
 
 FROM nginx:1.27-alpine
 
