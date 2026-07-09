@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate, useParams } from 'react-router-dom'
 import Landing from './pages/Landing.jsx'
+import Docs from './pages/Docs.jsx'
 import Inspector from './pages/Inspector.jsx'
 import SharedCaptureView from './features/inspector/components/SharedCaptureView.jsx'
 
@@ -20,6 +21,7 @@ export default function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/" element={<Landing />} />
+        <Route path="/docs" element={<Docs />} />
         <Route path="/i/:token" element={<InspectorWithTab />} />
         <Route path="/i/:token/:tab" element={<InspectorWithTab />} />
         <Route path="/c/:id" element={<SharedCaptureRoute />} />

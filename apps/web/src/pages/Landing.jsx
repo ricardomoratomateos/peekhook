@@ -603,6 +603,7 @@ export default function Landing() {
             peekhook<span style={s.wordmarkDot}>.</span>
           </a>
           <div style={s.navLinks}>
+            <a className="phf-link" style={s.navLink} href="/docs">docs</a>
             <a className="phf-link" style={s.navLink} href={GITHUB} target="_blank" rel="noreferrer">github</a>
             <a className="phf-link" style={s.navLink} href="#own">peekgrok</a>
             <button className="phf-cta phf-cta-primary" style={s.navCta} onClick={() => openInbox()} disabled={busy}>
