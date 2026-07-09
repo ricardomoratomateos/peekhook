@@ -144,6 +144,22 @@ const s = {
     lineHeight: 1.5,
   },
   shell: { maxWidth: 1080, margin: '0 auto', padding: '0 24px' },
+  toast: {
+    position: 'fixed',
+    bottom: 24,
+    left: '50%',
+    transform: 'translateX(-50%)',
+    zIndex: 50,
+    fontFamily: MONO,
+    fontSize: 12.5,
+    color: C.text,
+    background: C.surface2,
+    border: `1px solid ${C.red}`,
+    borderRadius: 8,
+    padding: '10px 16px',
+    cursor: 'pointer',
+    boxShadow: '0 8px 30px rgba(0,0,0,.5)',
+  },
 
   // nav
   nav: {
@@ -557,13 +573,17 @@ function HeroVisual() {
 export default function Landing() {
   const navigate = useNavigate()
   const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState(null)
 
   async function openInbox(tab = '') {
     if (busy) return
     setBusy(true)
+    setErr(null)
     try {
       const inbox = await api.createInbox()
       navigate(`/i/${inbox.token}${tab}`, { state: { justCreated: true } })
+    } catch (e) {
+      setErr("couldn't mint an inbox — is the api reachable?")
     } finally {
       setBusy(false)
     }
@@ -572,6 +592,9 @@ export default function Landing() {
   return (
     <div className="phf-root" style={s.page}>
       <style>{css}</style>
+      {err && (
+        <div style={s.toast} role="alert" onClick={() => setErr(null)}>{err}</div>
+      )}
 
       <div style={s.shell}>
         {/* nav */}
