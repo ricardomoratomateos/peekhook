@@ -1,4 +1,4 @@
- # PeekHook. Claude Code Instructions
+ # peekhook. Claude Code Instructions
 
 ## Scope
 Public, anonymous webhook inspector. No auth, no SaaS baggage.

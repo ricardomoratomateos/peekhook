@@ -1,6 +1,6 @@
 # Engineering Conventions
 
-This document is the source of truth for how PeekHook code is
+This document is the source of truth for how peekhook code is
 written. Every parallel agent reads it first. Anything not in
 here is the agent's call, but the conventions below are
 non-negotiable — they keep the codebase mergeable across

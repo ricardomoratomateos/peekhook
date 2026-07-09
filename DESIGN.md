@@ -1,4 +1,4 @@
-# PeekHook. Design System
+# peekhook. Design System
 
 Minimal monochrome canvas with a single electric-lime accent. Tuned
 for a developer-tool product: dark surface stack, sharp 4px radii,

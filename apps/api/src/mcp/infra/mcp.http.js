@@ -27,7 +27,7 @@ import { sanitizeParamsForAudit } from '../app/SafeResponse.js'
  *     local Claude / Cursor / Cline clients usable without extra
  *     config.
  *
- * Security (PeekHook additions, applied to the MCP layer):
+ * Security (peekhook additions, applied to the MCP layer):
  *   - Per-token rate limit: 10 calls / 60s, sliding window, keyed on
  *     the SHA-256 hash of the bearer token. Exceeded calls return
  *     429 + `Retry-After: <seconds>`. The limit is checked AFTER auth
