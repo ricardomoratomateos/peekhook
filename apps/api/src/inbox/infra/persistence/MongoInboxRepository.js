@@ -44,6 +44,13 @@ export class MongoInboxRepository extends InboxRepository {
     )
   }
 
+  async updateCaptureFilter(token, captureFilter) {
+    await this.col.updateOne(
+      { token },
+      { $set: { captureFilter } },
+    )
+  }
+
   async resetCaptureCount(token) {
     await this.col.updateOne(
       { token },

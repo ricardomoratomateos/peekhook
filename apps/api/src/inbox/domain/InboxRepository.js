@@ -49,6 +49,19 @@ export class InboxRepository {
   }
 
   /**
+   * Set or clear the capture allowlist. Pass `null` to clear (capture
+   * everything). The value is the already-validated + normalised filter
+   * returned by `validateCaptureFilter`.
+   *
+   * @param {string} token
+   * @param {null | object} captureFilter
+   * @returns {Promise<void>}
+   */
+  async updateCaptureFilter(token, captureFilter) {
+    throw new Error('InboxRepository.updateCaptureFilter not implemented')
+  }
+
+  /**
    * Atomically check both the per-inbox capacity cap and the 60/min
    * sliding-window rate limit, and (if both pass) increment the
    * counters on the inbox document in a single operation.

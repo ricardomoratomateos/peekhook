@@ -46,6 +46,15 @@ export const api = {
   clearForward: (token) =>
     request(`/api/inboxes/${token}/forward`, { method: 'DELETE' }),
 
+  setCaptureFilter: (token, captureFilter) =>
+    request(`/api/inboxes/${token}/capture-filter`, {
+      method: 'PUT',
+      body: JSON.stringify({ captureFilter }),
+    }),
+
+  clearCaptureFilter: (token) =>
+    request(`/api/inboxes/${token}/capture-filter`, { method: 'DELETE' }),
+
   streamUrl: (token) => `/api/inboxes/${token}/stream`,
 
   getSchemaHistory: (token) => request(`/api/inboxes/${token}/schema-history`),

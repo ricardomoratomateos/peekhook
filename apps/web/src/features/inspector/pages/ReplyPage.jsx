@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import ResponseConfigPanel from '../components/ResponseConfigPanel.jsx'
 import ForwardConfigPanel from '../components/ForwardConfigPanel.jsx'
+import CaptureFilterPanel from '../components/CaptureFilterPanel.jsx'
 import ConfirmModal from '../components/ConfirmModal.jsx'
 import { api } from '../../../lib/api.js'
 import { s, d } from '../styles.js'
@@ -30,6 +31,7 @@ export default function ReplyPage({ token }) {
   const responseConfig = inbox?.responseConfig ?? null
   const forwardTo      = inbox?.forwardTo      ?? null
   const ingestUrl      = inbox?.ingestUrl      ?? null
+  const captureFilter  = inbox?.captureFilter  ?? null
 
   async function commitInbox({ response, forwardTo: nextForward }) {
     setBusy(true)
@@ -110,6 +112,23 @@ export default function ReplyPage({ token }) {
     commitInbox({ forwardTo: null })
   }
 
+  async function commitCaptureFilter(next) {
+    setBusy(true)
+    setLoadError(null)
+    try {
+      if (next === null) {
+        await api.clearCaptureFilter(token)
+      } else {
+        await api.setCaptureFilter(token, next)
+      }
+      await refresh()
+    } catch (err) {
+      setLoadError(err.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
   function confirmPending() {
     if (!pendingClear) return
     if (pendingClear.kind === 'response-overwrites-forward') {
@@ -182,6 +201,13 @@ export default function ReplyPage({ token }) {
           onRequestClear={handleRequestClearForward}
           busy={busy}
           ingestUrl={ingestUrl}
+        />
+        <CaptureFilterPanel
+          token={token}
+          value={captureFilter}
+          onRequestSave={commitCaptureFilter}
+          onRequestClear={() => commitCaptureFilter(null)}
+          busy={busy}
         />
       </div>
       {modalConfig && (

@@ -85,6 +85,104 @@ export const RATE_LIMIT_WINDOW_MS = 60_000
 export const RATE_LIMIT_MAX_REQUESTS = 60
 
 /**
+ * Caps on a `captureFilter` allowlist. The filter is a per-inbox rule set
+ * evaluated on every ingest BEFORE a capture slot is consumed, so it lives
+ * on the hot path — the caps keep evaluation cheap and bound the persisted
+ * document size.
+ *
+ *   - `CAPTURE_FILTER_MAX_RULES` — max entries in any single dimension
+ *     (methods / paths / headers / query). 20 is comfortably above the
+ *     realistic "only these endpoints" use case.
+ *   - `CAPTURE_FILTER_VALUE_MAX` — byte cap on any single path pattern,
+ *     header/query name, or value string.
+ */
+export const CAPTURE_FILTER_MAX_RULES = 20
+export const CAPTURE_FILTER_VALUE_MAX = 512
+
+/**
+ * HTTP methods the capture filter's `methods` dimension will accept. Mirrors
+ * the ingest route's CAPTURE_METHODS plus GET (captured for non-browser
+ * clients), so a filter can only name a method the endpoint might actually
+ * receive. Rejecting anything else at config time turns a typo into a clean
+ * 400 instead of a filter that silently matches nothing.
+ */
+export const CAPTURE_FILTER_METHODS = Object.freeze(['GET', 'POST', 'PUT', 'PATCH', 'DELETE'])
+
+/**
+ * Pure validator + normaliser for a capture filter allowlist. Returns the
+ * cleaned filter, or `null` to mean "no filter" (capture everything) — which
+ * is also what a filter whose dimensions are all empty normalises to, so the
+ * ingest path can treat `null` as the single "unfiltered" sentinel.
+ *
+ * Throws on malformed input (wrong types, over-cap sizes, unknown methods).
+ * Unknown top-level keys are ignored rather than rejected so the shape can
+ * grow without breaking older clients.
+ *
+ * @param {unknown} raw
+ * @returns {null | { methods?: string[], paths?: string[],
+ *   headers?: Array<{ name: string, value?: string }>,
+ *   query?: Array<{ name: string, value?: string }> }}
+ */
+export function validateCaptureFilter(raw) {
+  if (raw === null || raw === undefined) return null
+  if (typeof raw !== 'object' || Array.isArray(raw)) throw new Error('captureFilter must be an object')
+
+  const out = {}
+
+  if (raw.methods !== undefined && raw.methods !== null) {
+    if (!Array.isArray(raw.methods)) throw new Error('captureFilter.methods must be an array')
+    if (raw.methods.length > CAPTURE_FILTER_MAX_RULES) throw new Error(`captureFilter.methods exceeds ${CAPTURE_FILTER_MAX_RULES} entries`)
+    const methods = raw.methods.map((m) => {
+      if (typeof m !== 'string' || m.length === 0) throw new Error('captureFilter.methods entries must be non-empty strings')
+      const upper = m.toUpperCase()
+      if (!CAPTURE_FILTER_METHODS.includes(upper)) {
+        throw new Error(`captureFilter.methods entries must be one of: ${CAPTURE_FILTER_METHODS.join(', ')}`)
+      }
+      return upper
+    })
+    if (methods.length > 0) out.methods = methods
+  }
+
+  if (raw.paths !== undefined && raw.paths !== null) {
+    if (!Array.isArray(raw.paths)) throw new Error('captureFilter.paths must be an array')
+    if (raw.paths.length > CAPTURE_FILTER_MAX_RULES) throw new Error(`captureFilter.paths exceeds ${CAPTURE_FILTER_MAX_RULES} entries`)
+    const paths = raw.paths.map((p) => {
+      if (typeof p !== 'string' || p.length === 0) throw new Error('captureFilter.paths entries must be non-empty strings')
+      if (Buffer.byteLength(p, 'utf8') > CAPTURE_FILTER_VALUE_MAX) throw new Error(`captureFilter.paths entry exceeds ${CAPTURE_FILTER_VALUE_MAX} bytes`)
+      return p
+    })
+    if (paths.length > 0) out.paths = paths
+  }
+
+  const kvDimension = (key) => {
+    if (raw[key] === undefined || raw[key] === null) return
+    if (!Array.isArray(raw[key])) throw new Error(`captureFilter.${key} must be an array`)
+    if (raw[key].length > CAPTURE_FILTER_MAX_RULES) throw new Error(`captureFilter.${key} exceeds ${CAPTURE_FILTER_MAX_RULES} entries`)
+    const rules = raw[key].map((rule) => {
+      if (!rule || typeof rule !== 'object' || typeof rule.name !== 'string' || rule.name.length === 0) {
+        throw new Error(`captureFilter.${key} entries must be objects with a non-empty "name"`)
+      }
+      if (Buffer.byteLength(rule.name, 'utf8') > CAPTURE_FILTER_VALUE_MAX) throw new Error(`captureFilter.${key} name exceeds ${CAPTURE_FILTER_VALUE_MAX} bytes`)
+      const cleaned = { name: rule.name }
+      if (rule.value !== undefined && rule.value !== null) {
+        if (typeof rule.value !== 'string') throw new Error(`captureFilter.${key} value must be a string when present`)
+        if (Buffer.byteLength(rule.value, 'utf8') > CAPTURE_FILTER_VALUE_MAX) throw new Error(`captureFilter.${key} value exceeds ${CAPTURE_FILTER_VALUE_MAX} bytes`)
+        // An empty-string value means "match on presence" — matching a header
+        // whose value is literally "" is never the intent, so we normalise it
+        // away and keep the rule as name-only (same as the inspector does).
+        if (rule.value !== '') cleaned.value = rule.value
+      }
+      return cleaned
+    })
+    if (rules.length > 0) out[key] = rules
+  }
+  kvDimension('headers')
+  kvDimension('query')
+
+  return Object.keys(out).length === 0 ? null : out
+}
+
+/**
  * Pure validator for sandbox response configurations, exposed so the
  * ConfigureResponse use case can validate at the boundary without needing
  * a rehydrated SandboxInbox aggregate. Throws on invalid input.
@@ -233,8 +331,9 @@ export class SandboxInbox {
   #captureCount
   #rateWindow
   #mockBodySize
+  #captureFilter
 
-  constructor({ token, createdAt, expiresAt, responseConfig, forwardTo, captureCount, rateWindow, mockBodySize }) {
+  constructor({ token, createdAt, expiresAt, responseConfig, forwardTo, captureCount, rateWindow, mockBodySize, captureFilter }) {
     this.#token = token
     this.#createdAt = createdAt
     this.#expiresAt = expiresAt
@@ -243,6 +342,7 @@ export class SandboxInbox {
     this.#captureCount = captureCount ?? 0
     this.#rateWindow = rateWindow ?? { startedAt: null, count: 0 }
     this.#mockBodySize = mockBodySize ?? 0
+    this.#captureFilter = captureFilter ?? null
     if (this.#rateWindow.startedAt !== null && !(this.#rateWindow.startedAt instanceof Date)) {
       this.#rateWindow.startedAt = new Date(this.#rateWindow.startedAt)
     }
@@ -285,6 +385,12 @@ export class SandboxInbox {
    * mock reply is configured (or its body is the empty string).
    */
   get mockBodySize()   { return this.#mockBodySize }
+  /**
+   * Allowlist that gates which requests are captured, or `null` when the
+   * inbox captures everything. See `validateCaptureFilter` for the shape
+   * and `matchesCaptureFilter` for the evaluation semantics.
+   */
+  get captureFilter()  { return this.#captureFilter }
 
   /** Snapshot for persistence. The only way state leaves the aggregate. */
   toDocument() {
@@ -297,6 +403,7 @@ export class SandboxInbox {
       captureCount:   this.#captureCount,
       rateWindow:     this.#rateWindow,
       mockBodySize:   this.#mockBodySize,
+      captureFilter:  this.#captureFilter,
     }
   }
 }

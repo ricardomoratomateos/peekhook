@@ -1,6 +1,7 @@
 import { Outcome } from '../domain/Outcome.js'
 import { CapturedRequest } from '../domain/CapturedRequest.js'
 import { sanitizeHeaders } from '../domain/headerSanitizer.js'
+import { matchesCaptureFilter } from '../domain/captureFilterRule.js'
 
 /**
  * CaptureRequest — stores an incoming HTTP request in a sandbox inbox.
@@ -71,6 +72,31 @@ export class CaptureRequest {
    * }>}
    */
   async execute({ inboxToken, method, path, query, headers, body, contentType, size, ip, upstreamResponse }) {
+    // Read the inbox up front so the capture filter can be evaluated BEFORE
+    // any slot is reserved. A request the allowlist rejects must not consume
+    // the lifetime cap or the rate window — that's the whole point of the
+    // filter — so the check has to precede tryConsumeCaptureSlot. The (rare)
+    // race where the filter changes between this read and the reservation is
+    // harmless: at worst one request is judged against a filter that is one
+    // update stale.
+    const existing = await this.inboxes.findByToken(inboxToken)
+    if (!existing) {
+      return { outcome: Outcome.INBOX_NOT_FOUND, responseConfig: null, forwardTo: null }
+    }
+
+    if (existing.captureFilter && !matchesCaptureFilter({ method, path, query, headers }, existing.captureFilter)) {
+      // Allowlist miss: the inbox still responds (mock / forward / ack)
+      // exactly as it would for a captured request, but nothing is persisted
+      // and no slot is consumed. FILTERED carries the response config through
+      // so the transport adapter's dispatch is unchanged — only the insert
+      // and the counter increment are skipped.
+      return {
+        outcome:        Outcome.FILTERED,
+        responseConfig: existing.responseConfig ?? null,
+        forwardTo:      existing.forwardTo      ?? null,
+      }
+    }
+
     let inbox
     if (this.enforceLimits) {
       const reserved = await this.inboxes.tryConsumeCaptureSlot(inboxToken, this.now())
@@ -94,13 +120,10 @@ export class CaptureRequest {
       }
       inbox = reserved.inbox
     } else {
-      // Limits bypassed (local proxy mode): read the inbox directly. No slot
-      // is consumed, so the capture never counts against the lifetime cap or
-      // the sliding rate window.
-      inbox = await this.inboxes.findByToken(inboxToken)
-      if (!inbox) {
-        return { outcome: Outcome.INBOX_NOT_FOUND, responseConfig: null, forwardTo: null }
-      }
+      // Limits bypassed (local proxy mode): reuse the inbox already read
+      // above. No slot is consumed, so the capture never counts against the
+      // lifetime cap or the sliding rate window.
+      inbox = existing
     }
 
     const id  = this.requests.nextId()

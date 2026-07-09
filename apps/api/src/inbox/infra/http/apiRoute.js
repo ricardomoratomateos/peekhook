@@ -6,6 +6,7 @@ import { ListRequests } from '../../app/ListRequests.js'
 import { GetRequest } from '../../app/GetRequest.js'
 import { ConfigureResponse } from '../../app/ConfigureResponse.js'
 import { ConfigureForward } from '../../app/ConfigureForward.js'
+import { ConfigureCaptureFilter } from '../../app/ConfigureCaptureFilter.js'
 import { ClearInbox } from '../../app/ClearInbox.js'
 import { ExportEvents } from '../../app/ExportEvents.js'
 import { GetSchemaHistory } from '../../../schema-history/app/GetSchemaHistory.js'
@@ -155,6 +156,7 @@ function makeUseCases(fastify) {
     getRequest:        new GetRequest({ requests: readModel }),
     configureResponse: new ConfigureResponse({ inboxes: inboxRepo }),
     configureForward:  new ConfigureForward({ inboxes: inboxRepo, ingestUrl: config.ingestUrl }),
+    configureCaptureFilter: new ConfigureCaptureFilter({ inboxes: inboxRepo }),
     mintMcpToken:      new MintMcpToken({ mcpAuth }),
     getSchemaHistory:  new GetSchemaHistory({ schemas: schemaRepo }),
   }
@@ -183,6 +185,7 @@ export default async function apiRoute(fastify) {
       mcp_token:    mcpToken,
       forwardTo:    null,
       responseConfig: null,
+      captureFilter: null,
     })
   })
 
@@ -463,6 +466,7 @@ export default async function apiRoute(fastify) {
       expiresAt:     inbox.expiresAt,
       responseConfig: inbox.responseConfig ?? null,
       forwardTo:     inbox.forwardTo ?? null,
+      captureFilter: inbox.captureFilter ?? null,
     })
   })
 
@@ -521,6 +525,34 @@ export default async function apiRoute(fastify) {
 
     if (result.outcome === Outcome.NOT_FOUND) return reply.code(404).send({ error: 'Inbox not found' })
     return reply.send({ token, forwardTo: null })
+  })
+
+  // Capture filter (allowlist). Gates which requests are logged: a request
+  // that matches no rule is answered normally (mock / forward / ack) but is
+  // never persisted and consumes neither the lifetime cap nor the rate
+  // window. Sibling of /forward — validate at the boundary, persist a
+  // normalised value (or null to clear / capture everything).
+  fastify.put('/api/inboxes/:token/capture-filter', async (request, reply) => {
+    const { token } = request.params
+    const body = request.body ?? {}
+    const { configureCaptureFilter } = makeUseCases(fastify)
+    const result = await configureCaptureFilter.execute({
+      token,
+      captureFilter: body.captureFilter ?? null,
+    })
+
+    if (result.outcome === Outcome.NOT_FOUND) return reply.code(404).send({ error: 'Inbox not found' })
+    if (result.outcome === Outcome.INVALID)  return reply.code(400).send({ error: result.error })
+    return reply.send({ token, captureFilter: result.captureFilter })
+  })
+
+  fastify.delete('/api/inboxes/:token/capture-filter', async (request, reply) => {
+    const { token } = request.params
+    const { configureCaptureFilter } = makeUseCases(fastify)
+    const result = await configureCaptureFilter.execute({ token, captureFilter: null })
+
+    if (result.outcome === Outcome.NOT_FOUND) return reply.code(404).send({ error: 'Inbox not found' })
+    return reply.send({ token, captureFilter: null })
   })
 
   // Mint a fresh MCP token for an existing inbox. The plaintext is

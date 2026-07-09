@@ -122,7 +122,14 @@ async function captureHandler(request, reply) {
       .send({ error: 'Rate limit exceeded (60 req / min / token). Try again later.', retryAfterSec: Number(retryAfter) })
   }
 
-  const captureId = result.id.toString()
+  // FILTERED means the inbox's capture allowlist rejected this request: it
+  // was not persisted and consumed no capacity. We still run the full
+  // response dispatch below (mock reply → forward → default ack) so the
+  // caller sees the exact behaviour it would for a captured request — only
+  // the persistence side-effects (the capture row, the upstream-response
+  // update) are skipped. `captureId` is null in that case.
+  const captured = result.outcome === Outcome.CAPTURED
+  const captureId = captured ? result.id.toString() : null
   const capturedRepo = makeRequestRepo(request.server)
 
   // Precedence: an explicitly-enabled mock reply wins over forwarding.
@@ -216,10 +223,15 @@ async function captureHandler(request, reply) {
       replyBody   = { error: 'forward failed', message: fwd.message }
     }
 
-    try {
-      await capturedRepo.updateUpstreamResponse(captureId, upstreamDto)
-    } catch (_err) {
-      /* capture update failure must not change the response to the caller */
+    // Only persist the upstream response when there is a capture row to
+    // attach it to. A FILTERED request is forwarded transparently but never
+    // stored, so there is no id to update.
+    if (captured) {
+      try {
+        await capturedRepo.updateUpstreamResponse(captureId, upstreamDto)
+      } catch (_err) {
+        /* capture update failure must not change the response to the caller */
+      }
     }
 
     const reply2 = reply.code(replyStatus)
@@ -237,7 +249,7 @@ async function captureHandler(request, reply) {
     return reply2.send(replyBody)
   }
 
-  return reply.code(200).send({ ok: true, id: captureId })
+  return reply.code(200).send(captured ? { ok: true, id: captureId } : { ok: true })
 }
 
 /**

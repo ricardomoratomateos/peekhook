@@ -6,11 +6,15 @@
  *
  *   CaptureRequest:
  *     → CAPTURED              — request persisted, return id + responseConfig
+ *     → FILTERED              — request matched no allowlist rule; the inbox
+ *                               still responds (mock / forward / ack) but the
+ *                               request is NOT persisted and consumes neither
+ *                               the lifetime cap nor the rate window
  *     → INBOX_NOT_FOUND       — token does not resolve to a sandbox inbox
  *     → RATE_LIMITED          — sliding 60-req / 60-sec window exhausted
  *     → CAPACITY_EXCEEDED     — inbox has already accepted MAX_CAPTURE_COUNT
  *
- *   ConfigureResponse / ConfigureForward:
+ *   ConfigureResponse / ConfigureForward / ConfigureCaptureFilter:
  *     → UPDATED | CLEARED | NOT_FOUND | INVALID
  *
  * Mapping to HTTP status codes is the transport adapter's job.
@@ -21,6 +25,7 @@
 export const Outcome = Object.freeze({
   CREATED:           'created',
   CAPTURED:          'captured',
+  FILTERED:          'filtered',
   INBOX_NOT_FOUND:   'inbox_not_found',
   RATE_LIMITED:      'rate_limited',
   CAPACITY_EXCEEDED: 'capacity_exceeded',

@@ -32,15 +32,23 @@ export function migrate(db) {
       mock_body_size INTEGER NOT NULL DEFAULT 0,
       forward_to TEXT,
       expires_at INTEGER NOT NULL,
-      mcp_token_hash TEXT
+      mcp_token_hash TEXT,
+      capture_filter TEXT
     );
     CREATE INDEX IF NOT EXISTS idx_inboxes_expires_at ON inboxes(expires_at);
   `)
-  try {
-    db.exec('ALTER TABLE inboxes ADD COLUMN mcp_token_hash TEXT')
-  } catch (_err) {
-    // Column already exists — safe to ignore. SQLite raises
-    // "duplicate column name: mcp_token_hash" in this branch.
+  // Additive columns, added in two steps so the migration is safe against
+  // both fresh and pre-existing databases (SQLite has no ADD COLUMN IF NOT
+  // EXISTS — the "duplicate column name" failure is swallowed).
+  for (const ddl of [
+    'ALTER TABLE inboxes ADD COLUMN mcp_token_hash TEXT',
+    'ALTER TABLE inboxes ADD COLUMN capture_filter TEXT',
+  ]) {
+    try {
+      db.exec(ddl)
+    } catch (_err) {
+      // Column already exists — safe to ignore.
+    }
   }
 }
 
@@ -63,6 +71,7 @@ function rowToDoc(row) {
     responseConfig: row.response_config == null ? null : JSON.parse(row.response_config),
     mockBodySize: row.mock_body_size,
     forwardTo: row.forward_to == null ? null : row.forward_to,
+    captureFilter: row.capture_filter == null ? null : JSON.parse(row.capture_filter),
     expiresAt: new Date(row.expires_at),
   }
 }
@@ -75,6 +84,7 @@ const SELECT_COLUMNS = `
   response_config,
   mock_body_size,
   forward_to,
+  capture_filter,
   expires_at
 `
 
@@ -146,8 +156,9 @@ export class SqliteInboxRepository extends InboxRepository {
           response_config,
           mock_body_size,
           forward_to,
+          capture_filter,
           expires_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       `)
       .run(
         doc.token,
@@ -157,6 +168,7 @@ export class SqliteInboxRepository extends InboxRepository {
         doc.responseConfig == null ? null : JSON.stringify(doc.responseConfig),
         doc.mockBodySize,
         doc.forwardTo,
+        doc.captureFilter == null ? null : JSON.stringify(doc.captureFilter),
         doc.expiresAt.getTime(),
       )
   }
@@ -183,6 +195,16 @@ export class SqliteInboxRepository extends InboxRepository {
         WHERE token = ?
       `)
       .run(forwardTo, token)
+  }
+
+  async updateCaptureFilter(token, captureFilter) {
+    this.db
+      .query(`
+        UPDATE inboxes
+        SET capture_filter = ?
+        WHERE token = ?
+      `)
+      .run(captureFilter == null ? null : JSON.stringify(captureFilter), token)
   }
 
   async resetCaptureCount(token) {

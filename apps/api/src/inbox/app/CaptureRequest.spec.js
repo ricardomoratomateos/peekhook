@@ -137,6 +137,80 @@ describe('CaptureRequest', () => {
     expect(result.outcome).toBe('capacity_exceeded')
   })
 
+  it('does not capture, persist, or consume a slot when the allowlist rejects the request', async () => {
+    const inbox = SandboxInbox.create()
+    await inboxes.insert(inbox)
+    await inboxes.updateCaptureFilter(inbox.token, { paths: ['/webhooks/stripe'] })
+
+    const sut = new CaptureRequest({ inboxes, requests })
+    const result = await sut.execute({
+      inboxToken: inbox.token,
+      method: 'POST',
+      path: '/some/other/path',
+      query: {},
+      headers: {},
+      body: '{}',
+      contentType: 'application/json',
+      size: 2,
+      ip: '127.0.0.1',
+    })
+
+    expect(result.outcome).toBe('filtered')
+    expect(result.id).toBeUndefined()
+
+    // nothing persisted
+    const count = await db.collection('requests').countDocuments({ inboxToken: inbox.token })
+    expect(count).toBe(0)
+    // no slot consumed — the lifetime counter stayed at 0
+    const fresh = await inboxes.findByToken(inbox.token)
+    expect(fresh.captureCount).toBe(0)
+  })
+
+  it('still surfaces responseConfig / forwardTo on a filtered request so the caller gets a reply', async () => {
+    const inbox = SandboxInbox.create()
+    await inboxes.insert(inbox)
+    await inboxes.updateCaptureFilter(inbox.token, { methods: ['PUT'] })
+    await inboxes.updateForwardTo(inbox.token, 'http://localhost:9/hook')
+
+    const sut = new CaptureRequest({ inboxes, requests })
+    const result = await sut.execute({
+      inboxToken: inbox.token,
+      method: 'POST', // not PUT -> filtered
+      path: '/x',
+      query: {},
+      headers: {},
+      body: '{}',
+      contentType: 'application/json',
+      size: 2,
+      ip: '127.0.0.1',
+    })
+
+    expect(result.outcome).toBe('filtered')
+    expect(result.forwardTo).toBe('http://localhost:9/hook')
+  })
+
+  it('captures normally when the request matches the allowlist', async () => {
+    const inbox = SandboxInbox.create()
+    await inboxes.insert(inbox)
+    await inboxes.updateCaptureFilter(inbox.token, { methods: ['POST'], paths: ['/hook/*'] })
+
+    const sut = new CaptureRequest({ inboxes, requests })
+    const result = await sut.execute({
+      inboxToken: inbox.token,
+      method: 'POST',
+      path: '/hook/abc',
+      query: {},
+      headers: {},
+      body: '{}',
+      contentType: 'application/json',
+      size: 2,
+      ip: '127.0.0.1',
+    })
+
+    expect(result.outcome).toBe('captured')
+    expect(result.id).toBeDefined()
+  })
+
   it('returns rate_limited with retryAfterSec after 60 captures inside the window', async () => {
     const inbox = SandboxInbox.create()
     await inboxes.insert(inbox)
