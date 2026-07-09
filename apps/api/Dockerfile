@@ -29,7 +29,7 @@ ENV CI=true
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY apps/api/package.json ./apps/api/package.json
 COPY apps/web/package.json ./apps/web/package.json
-RUN pnpm install --frozen-lockfile && pnpm prune --prod
+RUN pnpm install --frozen-lockfile --prod
 
 COPY apps/api/src ./apps/api/src
 
