@@ -1,7 +1,7 @@
-import { getDb } from '../shared/db.js'
-import { MongoInboxRepository } from '../inbox/infra/persistence/MongoInboxRepository.js'
-import { MongoRegexSearchRepository } from './infra/MongoRegexSearchRepository.js'
-import { SearchEvents } from './app/SearchEvents.js'
+import { getDb } from '../../shared/db.js'
+import { MongoInboxRepository } from '../../inbox/infra/persistence/MongoInboxRepository.js'
+import { MongoRegexSearchRepository } from './MongoRegexSearchRepository.js'
+import { SearchEvents } from '../app/SearchEvents.js'
 
 /**
  * Route handler factory for `GET /api/inboxes/:token/requests/search`.
@@ -32,9 +32,15 @@ export async function registerSearchRoutes(fastify, opts = {}) {
     const { token } = request.params
     const { regex, field, limit, before } = request.query
 
-    const db      = getDb()
-    const inboxes = opts.inboxRepo ?? fastify.inboxRepo  ?? new MongoInboxRepository(db)
-    const repo    = opts.searchRepo ?? fastify.searchRepo ?? new MongoRegexSearchRepository(db)
+    // Resolve deps dep-first; only touch getDb() when one is actually
+    // missing. Calling getDb() eagerly threw "DB not initialized" on the
+    // SQLite target (peekgrok never calls connectDb), 500-ing every search
+    // even though searchRepo was correctly injected.
+    const inboxRepo = opts.inboxRepo  ?? fastify.inboxRepo
+    const searchRepo = opts.searchRepo ?? fastify.searchRepo
+    const db      = (!inboxRepo || !searchRepo) ? getDb() : null
+    const inboxes = inboxRepo  ?? new MongoInboxRepository(db)
+    const repo    = searchRepo ?? new MongoRegexSearchRepository(db)
     const search  = new SearchEvents({ repo })
 
     const inbox = await inboxes.findByToken(token)

@@ -22,6 +22,10 @@
  *   4. No Authorization header → 401 + WWW-Authenticate
  *   5. Bearer with a wrong token → 401 + "invalid token"
  *   6. Audit log row was written (one row per authenticated tools/call)
+ *   7. HTTP search endpoint works on SQLite (regression: eager getDb()
+ *      threw "DB not initialized" and 500'd every search on peekgrok)
+ *   8. HTTP share endpoint works on SQLite (regression: the endpoint
+ *      hardcoded a Mongo repo from getDb() and ignored the SQLite repo)
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { Database } from 'bun:sqlite'
@@ -200,5 +204,46 @@ describe('local MCP over SQLite (POST /mcp)', () => {
     expect(row.tool).toBe('list_events')
     expect(JSON.parse(row.params)).toEqual({ limit: 1 })
     expect(row.token_hash).toBe(tokenHash)
+  })
+
+  // Regression: the HTTP search route called getDb() eagerly on every
+  // request. On the SQLite target (peekgrok never calls connectDb) that
+  // threw "DB not initialized" and 500'd every search, even though the
+  // SQLite searchRepo was correctly injected into buildApp.
+  it('GET /requests/search works on the SQLite target', async () => {
+    await fetch(`${baseUrl}/i/${inboxToken}`, {
+      method:  'POST',
+      headers: { 'content-type': 'application/json' },
+      body:    '{"marker":"searchable-needle"}',
+    })
+
+    const res = await fetch(
+      `${baseUrl}/api/inboxes/${inboxToken}/requests/search?regex=searchable-needle&field=body`,
+    )
+    expect(res.status).toBe(200)
+    const results = await res.json()
+    expect(Array.isArray(results)).toBe(true)
+    expect(results.length).toBeGreaterThanOrEqual(1)
+  })
+
+  // Regression: the share endpoint built a Mongo repo from getDb()
+  // directly, ignoring the injected SQLite capturedRequestRepo — so
+  // share 500'd on peekgrok despite SqliteCapturedRequestRepository
+  // implementing upsertShareId.
+  it('POST /requests/:id/share works on the SQLite target', async () => {
+    const listRes = await fetch(`${baseUrl}/api/inboxes/${inboxToken}/requests`)
+    expect(listRes.status).toBe(200)
+    const captures = await listRes.json()
+    expect(captures.length).toBeGreaterThanOrEqual(1)
+    const captureId = captures[0].id
+
+    const res = await fetch(
+      `${baseUrl}/api/inboxes/${inboxToken}/requests/${captureId}/share`,
+      { method: 'POST' },
+    )
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.shareId).toMatch(/^[0-9a-f]{32}$/)
+    expect(body.shareUrl).toContain(`/c/${body.shareId}`)
   })
 })

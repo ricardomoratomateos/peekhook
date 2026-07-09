@@ -1,4 +1,3 @@
-import { ObjectId } from 'mongodb'
 import { getDb } from '../../../shared/db.js'
 import { config } from '../../../config.js'
 import { Outcome } from '../../domain/Outcome.js'
@@ -14,6 +13,15 @@ import { MongoRequestListReadModel } from '../persistence/MongoRequestListReadMo
 import { MongoMcpAuthRepository } from '../../../mcp/infra/MongoMcpAuthRepository.js'
 import { MintMcpToken } from '../../../mcp/app/MintMcpToken.js'
 import { MongoPayloadSchemaRepository } from '../../../schema-history/infra/MongoPayloadSchemaRepository.js'
+
+// A 24-char hex string: the shape of a Mongo ObjectId AND of the SQLite id
+// mimic (see SqliteCapturedRequestRepository). Used for id-shape validation
+// so this shared route doesn't reach for the `mongodb` driver just to check
+// a URL param — it runs unchanged on the SQLite (peekgrok) target too.
+const OBJECT_ID_SHAPE = /^[0-9a-f]{24}$/i
+function isObjectIdShape(id) {
+  return typeof id === 'string' && OBJECT_ID_SHAPE.test(id)
+}
 
 const SSE_MAX_CONNECTIONS_PER_TOKEN = 5
 const SSE_DEFAULT_IDLE_TIMEOUT_MS   = 5 * 60 * 1000
@@ -186,7 +194,7 @@ export default async function apiRoute(fastify) {
 
   fastify.get('/api/inboxes/:token/requests/:id', async (request, reply) => {
     const { token, id } = request.params
-    if (!ObjectId.isValid(id)) return reply.code(400).send({ error: 'Invalid id' })
+    if (!isObjectIdShape(id)) return reply.code(400).send({ error: 'Invalid id' })
 
     const { getRequest } = makeUseCases(fastify)
     const result = await getRequest.execute({ inboxToken: token, id })
@@ -209,14 +217,16 @@ export default async function apiRoute(fastify) {
   if (shareEnabled) {
     fastify.post('/api/inboxes/:token/requests/:id/share', async (request, reply) => {
       const { token, id } = request.params
-      if (!ObjectId.isValid(id)) return reply.code(400).send({ error: 'Invalid id' })
+      if (!isObjectIdShape(id)) return reply.code(400).send({ error: 'Invalid id' })
 
-      const { inboxRepo, readModel } = resolveDeps(fastify)
+      const { inboxRepo } = resolveDeps(fastify)
       const inbox = await inboxRepo.findByToken(token)
       if (!inbox) return reply.code(404).send({ error: 'Inbox not found' })
 
-      const db = getDb()
-      const capturedRepo = new MongoCapturedRequestRepository(db)
+      // Resolve dep-first. The old code always built a Mongo repo from
+      // getDb(), so on the SQLite target (peekgrok) share threw
+      // "DB not initialized" and ignored the injected SQLite repo.
+      const capturedRepo = fastify.capturedRequestRepo ?? new MongoCapturedRequestRepository(getDb())
       const shareId = await capturedRepo.upsertShareId(id, token)
       if (!shareId) return reply.code(404).send({ error: 'Request not found' })
 
@@ -268,7 +278,7 @@ export default async function apiRoute(fastify) {
     // has a shareId). This is the deliberate "old URL is dead"
     // path: leaking an ObjectId is no longer sufficient to read
     // a capture. Users must click share to mint a fresh shareId.
-    if (ObjectId.isValid(id)) {
+    if (isObjectIdShape(id)) {
       return reply.code(404).send({ error: 'Request not found' })
     }
 

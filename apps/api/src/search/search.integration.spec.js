@@ -6,7 +6,7 @@ import { SandboxInbox }    from '../inbox/domain/SandboxInbox.js'
 import { MongoInboxRepository } from '../inbox/infra/persistence/MongoInboxRepository.js'
 import { MongoRegexSearchRepository } from './infra/MongoRegexSearchRepository.js'
 import { SearchEvents } from './app/SearchEvents.js'
-import { registerSearchRoutes } from './search.http.js'
+import { registerSearchRoutes } from './infra/search.http.js'
 
 /**
  * Same `vi.mock('shared/db.js')` trick as `scripting.integration.spec.js`:

@@ -1,6 +1,6 @@
 import Fastify from 'fastify'
 import { CaptureRequest } from '@peekhook/api/src/inbox/app/CaptureRequest.js'
-import { ForwardRequest } from '@peekhook/api/src/inbox/app/ForwardRequest.js'
+import { ForwardRequest } from '@peekhook/api/src/inbox/infra/ForwardRequest.js'
 import { runScript } from '@peekhook/api/src/scripting/index.js'
 import { ScriptOutcome } from '@peekhook/api/src/scripting/domain/ScriptErrors.js'
 

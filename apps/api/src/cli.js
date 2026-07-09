@@ -164,6 +164,18 @@ export async function startLocalServer({ port, db, dataDir, webDist, corsOrigin 
             request.url.startsWith('/health')) {
           return reply.code(404).send({ error: 'Not found' })
         }
+        // Root-level static files (favicon.svg, favicon.ico, robots.txt…)
+        // live at the dist root, not under /assets/. Try to serve the
+        // requested path as a real file before falling back to the SPA
+        // shell — otherwise `/favicon.svg` gets index.html (text/html) and
+        // the icon never loads. Real client-side routes (`/i/:token`) have
+        // no matching file, so loadAsset returns null and they fall through
+        // to index.html as before. `loadAsset` already guards traversal.
+        const pathname = request.url.split('?')[0].replace(/^\/+/, '')
+        if (pathname && pathname !== 'index.html') {
+          const asset = loadAsset(pathname)
+          if (asset) return reply.type(asset.type).send(asset.buf)
+        }
         return reply.type('text/html; charset=utf-8').send(indexHtml)
       })
     }

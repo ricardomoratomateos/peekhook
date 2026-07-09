@@ -1,7 +1,7 @@
 import { getDb } from '../../../shared/db.js'
 import { config } from '../../../config.js'
 import { CaptureRequest } from '../../app/CaptureRequest.js'
-import { ForwardRequest } from '../../app/ForwardRequest.js'
+import { ForwardRequest } from '../ForwardRequest.js'
 import { Outcome } from '../../domain/Outcome.js'
 import { MongoInboxRepository } from '../persistence/MongoInboxRepository.js'
 import { MongoCapturedRequestRepository } from '../persistence/MongoCapturedRequestRepository.js'
