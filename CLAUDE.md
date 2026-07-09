@@ -15,9 +15,17 @@ per-tool credentials). 5 tools: `list_events`, `get_event`,
 single URL — paste into Claude Code / Cursor / Cline, no install.
 
 ## Tech
-- Backend: Fastify + Mongo, TTL 7 days on `inboxes` and `requests`
+- Backend: Fastify, dual-target persistence via the `buildApp`
+  DI factory (`apps/api/src/app.js`). Hosted target
+  (`src/index.js`) wires `Mongo*` adapters, TTL 7 days on
+  `inboxes` and `requests`. Local target (`src/cli.js`) wires
+  `Sqlite*` adapters. Every port has both impls; domain/app
+  layers are identical.
 - Frontend: Vite + React 18 + react-router-dom 6, no SSR
-- Storage: MongoDB, ephemeral
+- CLI: `apps/cli` (`@peekhook/cli`), Bun runtime, ships the
+  `peekgrok` binary — local-first stack over `bun:sqlite` +
+  optional ngrok tunnel. Data in `~/.peekhook/peekgrok.db`.
+- Storage: MongoDB (hosted) or SQLite (local), both ephemeral
 
 ## Design system
 Read DESIGN.md before any visual/UI decisions. The Inspector shell

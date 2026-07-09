@@ -123,6 +123,39 @@ async function captureHandler(request, reply) {
   const captureId = result.id.toString()
   const capturedRepo = makeRequestRepo(request.server)
 
+  // Precedence: an explicitly-enabled mock reply wins over forwarding.
+  // Enabling a mock is a deliberate "intercept and simulate" action — and in
+  // local `peekgrok` sniffer mode forwarding is on by default, so if the mock
+  // did not short-circuit here it could never fire. (Historically forwardTo
+  // won; the flip makes the explicit toggle authoritative.)
+  const cfg = result.responseConfig
+  if (cfg && cfg.enabled) {
+    let body = cfg.body
+    if (cfg.scriptEnabled && typeof cfg.script === 'string' && cfg.script.length > 0) {
+      const scriptResult = await runScript.execute({
+        script: cfg.script,
+        request: {
+          method:      request.method,
+          path,
+          headers:     request.headers,
+          body:        rawBody,
+          contentType,
+          query,
+        },
+      })
+
+      if (scriptResult.outcome === ScriptOutcome.OK) {
+        body = scriptResult.body
+      } else if (scriptResult.outcome === ScriptOutcome.THREW) {
+        return reply.code(500).send({ error: 'script threw' })
+      }
+    }
+    return reply
+      .code(cfg.status)
+      .header('content-type', cfg.contentType)
+      .send(body)
+  }
+
   if (result.forwardTo) {
     const fwd = await makeForwardRequest({
       targetUrl: result.forwardTo,
@@ -192,34 +225,6 @@ async function captureHandler(request, reply) {
       reply2.header('content-type', fwd.contentType || 'application/octet-stream')
     }
     return reply2.send(replyBody)
-  }
-
-  const cfg = result.responseConfig
-  if (cfg && cfg.enabled) {
-    let body = cfg.body
-    if (cfg.scriptEnabled && typeof cfg.script === 'string' && cfg.script.length > 0) {
-      const scriptResult = await runScript.execute({
-        script: cfg.script,
-        request: {
-          method:      request.method,
-          path,
-          headers:     request.headers,
-          body:        rawBody,
-          contentType,
-          query,
-        },
-      })
-
-      if (scriptResult.outcome === ScriptOutcome.OK) {
-        body = scriptResult.body
-      } else if (scriptResult.outcome === ScriptOutcome.THREW) {
-        return reply.code(500).send({ error: 'script threw' })
-      }
-    }
-    return reply
-      .code(cfg.status)
-      .header('content-type', cfg.contentType)
-      .send(body)
   }
 
   return reply.code(200).send({ ok: true, id: captureId })
@@ -295,9 +300,18 @@ export default async function ingestRoute(fastify) {
     return payload.pipe(stream)
   })
 
-  fastify.get('/i/:token', async (request, reply) => {
-    return reply.code(405).send({
-      error: 'Inbox ingest accepts POST/PUT/PATCH/DELETE only. GET is reserved for the inspector UI.',
+  // GET /i/:token → 405 guard. On the hosted API the inspector SPA is a
+  // separate origin, so a GET here is always a misdirected curl and 405 is
+  // right. In local `peekgrok` mode the SPA is served on the SAME origin,
+  // and its inspector route IS `/i/:token` — there we must NOT register
+  // this route so the GET falls through to the SPA fallback. The local
+  // entry sets `features.ingestGetGuard = false`; everywhere else the flag
+  // is absent and the guard stays on (default).
+  if (fastify.features?.ingestGetGuard !== false) {
+    fastify.get('/i/:token', async (request, reply) => {
+      return reply.code(405).send({
+        error: 'Inbox ingest accepts POST/PUT/PATCH/DELETE only. GET is reserved for the inspector UI.',
+      })
     })
-  })
+  }
 }

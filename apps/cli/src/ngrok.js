@@ -2,54 +2,82 @@ import { spawn } from 'node:child_process'
 import { setTimeout as delay } from 'node:timers/promises'
 import http from 'node:http'
 
-const DEFAULT_PORT = 4040
-const TUNNEL_PORT = 4041
+// ngrok's local agent API (the web inspector) always binds 4040. We poll
+// it to discover the public URL once the tunnel is up. This is unrelated
+// to the port we ask ngrok to forward.
+const AGENT_API_PORT = 4040
 
-export async function startNgrok({ upstreamPort = TUNNEL_PORT, region = 'us' } = {}) {
-  const proc = spawn(
-    'ngrok',
-    ['http', String(upstreamPort), '--region', region, '--log', 'stdout'],
-    { stdio: ['ignore', 'pipe', 'pipe'] },
-  )
+/**
+ * Spawn an ngrok tunnel forwarding the public URL to a local port.
+ *
+ * @param {{
+ *   port:      number,          // local port to forward (the peekgrok server)
+ *   url?:      string|null,     // reserved ngrok domain, e.g. 'rmorato.ngrok.app'
+ *   region?:   string|null,     // ngrok region; omit to honor ~/.config/ngrok/ngrok.yml
+ *   extraArgs?: string[],       // raw args appended verbatim to the ngrok invocation
+ * }} opts
+ * @returns {Promise<{ url: string, close: () => void }>} public URL (no path appended)
+ */
+export async function startNgrok({ port, url = null, region = null, extraArgs = [] } = {}) {
+  if (!Number.isInteger(port)) {
+    throw new Error('startNgrok: `port` is required and must be an integer')
+  }
 
+  const ngrokArgs = ['http', String(port)]
+  if (url)    ngrokArgs.push('--url', url)
+  if (region) ngrokArgs.push('--region', region)
+  ngrokArgs.push('--log', 'stdout')
+  if (extraArgs.length) ngrokArgs.push(...extraArgs)
+
+  const proc = spawn('ngrok', ngrokArgs, { stdio: ['ignore', 'pipe', 'pipe'] })
+
+  // Capture stderr so we can surface a useful message if ngrok dies early
+  // (bad authtoken, domain not reserved, port already tunneled, …).
+  let stderrTail = ''
   proc.stdout.on('data', () => {})
-  proc.stderr.on('data', () => {})
+  proc.stderr.on('data', (chunk) => {
+    stderrTail = (stderrTail + chunk.toString()).slice(-2000)
+  })
   proc.on('exit', (code) => {
     if (code !== null && code !== 0 && code !== 143) {
       console.error(`ngrok exited unexpectedly with code ${code}`)
     }
   })
 
-  let url = null
+  let publicUrl = null
   for (let i = 0; i < 50; i++) {
+    if (proc.exitCode !== null) break
     await delay(200)
     try {
       const tunnels = await fetchTunnels()
-      if (tunnels.length > 0) {
-        url = tunnels[0].public_url
+      // Prefer the https tunnel when ngrok opens both http + https.
+      const chosen = tunnels.find((t) => t.public_url?.startsWith('https://')) ?? tunnels[0]
+      if (chosen) {
+        publicUrl = chosen.public_url
         break
       }
     } catch (_) {}
   }
 
-  if (!url) {
+  if (!publicUrl) {
     proc.kill('SIGTERM')
+    const hint = stderrTail.trim()
     throw new Error(
-      'ngrok did not become ready in 10s. Is it installed? Try: brew install ngrok/ngrok/ngrok',
+      'ngrok did not become ready in 10s. Is it installed and authenticated? ' +
+        'Try: brew install ngrok/ngrok/ngrok && ngrok config add-authtoken <token>' +
+        (hint ? `\n  ngrok said: ${hint}` : ''),
     )
   }
 
-  const token = generateToken()
   return {
-    url: `${url}/${token}`,
-    token,
+    url: publicUrl,
     close: () => proc.kill('SIGTERM'),
   }
 }
 
 async function fetchTunnels() {
   return new Promise((resolve, reject) => {
-    const req = http.get(`http://127.0.0.1:${DEFAULT_PORT}/api/tunnels`, (res) => {
+    const req = http.get(`http://127.0.0.1:${AGENT_API_PORT}/api/tunnels`, (res) => {
       let body = ''
       res.on('data', (chunk) => (body += chunk))
       res.on('end', () => {
@@ -63,10 +91,4 @@ async function fetchTunnels() {
     })
     req.on('error', reject)
   })
-}
-
-function generateToken() {
-  return Array.from(crypto.getRandomValues(new Uint8Array(16)))
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('')
 }

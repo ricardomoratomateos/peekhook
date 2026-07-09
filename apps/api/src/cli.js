@@ -65,6 +65,13 @@ export async function startLocalServer({ port, db, dataDir, webDist, corsOrigin 
   const mcpSearchReadModel = new SqliteMcpRequestSearchReadModel(db)
   const mcpRateLimiter     = new InMemoryMcpRateLimiter()
 
+  // When we serve the inspector SPA on this same origin, its client-side
+  // route `/i/:token` collides with the ingest GET-405 guard. Detect that
+  // up front so we can tell `buildApp` to skip the guard and let the GET
+  // fall through to the SPA fallback below.
+  const distPath = webDist ? resolve(webDist) : null
+  const willServeSpa = Boolean(distPath && existsSync(join(distPath, 'index.html')))
+
   const app = await buildApp(
     {
       inboxRepo:           inboxRepo,
@@ -86,6 +93,9 @@ export async function startLocalServer({ port, db, dataDir, webDist, corsOrigin 
       sseEnabled:   true,
       mcpEnabled:   true,
       shareEnabled: true,
+      // Skip the ingest GET-405 guard only when we own the SPA on this
+      // origin; otherwise keep the hosted default (guard on).
+      ingestGetGuard: !willServeSpa,
     },
   )
 
@@ -97,9 +107,8 @@ export async function startLocalServer({ port, db, dataDir, webDist, corsOrigin 
   }
 
   if (webDist) {
-    const distPath = resolve(webDist)
-    if (!existsSync(distPath)) {
-      app.log.warn(`webDist path does not exist: ${distPath} — UI will 404 on /`)
+    if (!willServeSpa) {
+      app.log.warn(`webDist has no index.html: ${distPath} — UI will 404 on /`)
     } else {
       // Cache the small dist files in memory at boot. peekhook's
       // built UI is a few hundred KB total; inlining is faster than
@@ -141,14 +150,16 @@ export async function startLocalServer({ port, db, dataDir, webDist, corsOrigin 
         return reply.type(asset.type).send(asset.buf)
       })
 
-      // SPA fallback: any GET that doesn't match an API/ingest/MCP
-      // route serves index.html so the React router can take over.
+      // SPA fallback: any GET that doesn't match an API/MCP route serves
+      // index.html so the React router can take over. Note `/i/` is NOT
+      // excluded here: the capture methods (POST/PUT/PATCH/DELETE) are
+      // owned by ingestRoute, so only a GET /i/:token reaches this handler
+      // — and that IS the inspector's SPA route (see ingestGetGuard above).
       app.setNotFoundHandler((request, reply) => {
         if (request.method !== 'GET' && request.method !== 'HEAD') {
           return reply.code(404).send({ error: 'Not found' })
         }
         if (request.url.startsWith('/api/') ||
-            request.url.startsWith('/i/')    ||
             request.url.startsWith('/mcp')   ||
             request.url.startsWith('/health')) {
           return reply.code(404).send({ error: 'Not found' })

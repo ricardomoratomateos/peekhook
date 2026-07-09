@@ -40,6 +40,28 @@ export default function InspectorView({ tab: tabProp }) {
     return () => clearInterval(t)
   }, [])
 
+  // Seed the MCP token handed over by the `peekgrok` CLI via the URL
+  // fragment (#mcp=...). The CLI mints the inbox server-side, so the browser
+  // never received the plaintext token — without this the MCP card shows
+  // empty and users regenerate, invalidating the token the terminal printed.
+  // The fragment never reaches the server, so the secret stays client-side;
+  // we persist it to localStorage (same key resolveMcpToken reads) and strip
+  // it from the address bar.
+  const [, setMcpSeeded] = useState(0)
+  useEffect(() => {
+    const m = (window.location.hash || '').match(/[#&]mcp=([A-Za-z0-9_-]+)/)
+    if (!m) return
+    try {
+      const key  = `peekhook-${token}`
+      const prev = JSON.parse(localStorage.getItem(key) || '{}')
+      localStorage.setItem(key, JSON.stringify({ ...prev, mcpToken: m[1] }))
+    } catch (_) {}
+    try {
+      window.history.replaceState(null, '', window.location.pathname + window.location.search)
+    } catch (_) {}
+    setMcpSeeded(v => v + 1)
+  }, [token])
+
   useEffect(() => {
     let es = null
     let pollTimer = null

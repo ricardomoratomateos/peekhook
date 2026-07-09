@@ -288,7 +288,11 @@ export default function DetailPanel({ req, token }) {
           </SectionTitle>
           <KVTable rows={headerRows} />
         </section>
-        <section style={{ ...d.section, flex: 1, display: 'flex', flexDirection: 'column', borderBottom: 'none' }}>
+        <section style={{
+          ...d.section,
+          display: 'flex', flexDirection: 'column',
+          ...(req.upstreamResponse ? {} : { flex: 1, borderBottom: 'none' }),
+        }}>
           <SectionTitle label="body">
             {bodyText && (
               <CopyIconButton
@@ -301,45 +305,53 @@ export default function DetailPanel({ req, token }) {
             ? <pre style={d.bodyPre}>{bodyText}</pre>
             : <span style={{ fontSize: '12px', color: c.faint }}>empty body</span>}
         </section>
-        {req.upstreamResponse && (
-          <section style={d.section}>
-            <ForwardedSection upstream={req.upstreamResponse} />
-          </section>
-        )}
+        {req.upstreamResponse && <ForwardedResponse upstream={req.upstreamResponse} />}
       </div>
     </div>
   )
 }
 
-function ForwardedSection({ upstream }) {
+function ForwardedResponse({ upstream }) {
   const err = upstream && upstream.error
-  const statusChip = err
-    ? <span style={fr.statusErr}>{upstream.error}</span>
-    : <span style={fr.statusOk}>{upstream.status}</span>
+  const headerRows = upstream.headers ? Object.entries(upstream.headers) : []
+  const bodyText = err ? '' : (formatBody(upstream.body, upstream.contentType) || upstream.body || '')
 
   return (
-    <div style={fr.section}>
-      <div style={d.sectionTitle}>forwarded response</div>
-      <div style={fr.statusRow}>
-        {statusChip}
-        {upstream.contentType && (
-          <span style={{ ...fr.pill }}>{upstream.contentType}</span>
-        )}
-        {typeof upstream.durationMs === 'number' && (
-          <span style={{ ...fr.pill }}>{upstream.durationMs}ms</span>
-        )}
+    <>
+      <div style={responseDivider}>
+        <span style={{ ...d.sectionTitle, marginBottom: 0 }}>forwarded response</span>
+        <div style={responseStatusRow}>
+          {err
+            ? <span style={fr.statusErr}>{upstream.error}</span>
+            : <span style={fr.statusOk}>{upstream.status}</span>}
+          {upstream.contentType && <span style={fr.pill}>{upstream.contentType}</span>}
+          {typeof upstream.durationMs === 'number' && <span style={fr.pill}>{upstream.durationMs}ms</span>}
+        </div>
       </div>
-      {err ? (
-        <pre style={fr.pre}>{upstream.message || upstream.error}</pre>
-      ) : upstream.body ? (
-        <pre style={fr.pre}>{formatBody(upstream.body, upstream.contentType) || upstream.body}</pre>
-      ) : (
-        <span style={{ fontSize: '12px', color: c.faint, fontFamily: c.mono }}>empty body</span>
+      {headerRows.length > 0 && (
+        <section style={d.section}>
+          <SectionTitle label="response headers">
+            <CopyIconButton
+              getText={() => headerRows.map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : v}`).join('\n')}
+              label="copy headers"
+            />
+          </SectionTitle>
+          <KVTable rows={headerRows} />
+        </section>
       )}
-      {upstream.headers && Object.keys(upstream.headers).length > 0 && (
-        <KVTable rows={Object.entries(upstream.headers)} />
-      )}
-    </div>
+      <section style={{ ...d.section, display: 'flex', flexDirection: 'column', borderBottom: 'none' }}>
+        <SectionTitle label="response body">
+          {bodyText && (
+            <CopyIconButton getText={() => bodyText} label="copy body" />
+          )}
+        </SectionTitle>
+        {err
+          ? <pre style={d.bodyPre}>{upstream.message || upstream.error}</pre>
+          : bodyText
+            ? <pre style={d.bodyPre}>{bodyText}</pre>
+            : <span style={{ fontSize: '12px', color: c.faint }}>empty body</span>}
+      </section>
+    </>
   )
 }
 
@@ -445,4 +457,18 @@ const driftChip = {
 const sectionTitleRow = {
   display: 'flex', alignItems: 'center', justifyContent: 'space-between',
   gap: '10px', marginBottom: '12px',
+}
+
+const responseDivider = {
+  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+  gap: '12px', flexWrap: 'wrap',
+  padding: '14px 22px',
+  borderTop: `1px solid ${c.border}`,
+  borderBottom: `1px solid ${c.borderSoft}`,
+  background: c.low,
+  flexShrink: 0,
+}
+
+const responseStatusRow = {
+  display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap',
 }

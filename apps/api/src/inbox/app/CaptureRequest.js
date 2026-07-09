@@ -33,15 +33,21 @@ import { sanitizeHeaders } from '../domain/headerSanitizer.js'
  *   recordSchema?: { execute(cmd: { inboxToken: string, body: string }): Promise<void> },
  *   now?:         () => Date,
  *   logger?:      { warn: (msg: string) => void } | null,
+ *   enforceLimits?: boolean,  // default true; false skips the 60/min +
+ *                             // 1,000-cap slot reservation (local `peekgrok`
+ *                             // proxy mode, where the user owns the machine
+ *                             // and a full-app proxy would blow the cap in
+ *                             // seconds). See tryConsumeCaptureSlot.
  * }} deps
  */
 export class CaptureRequest {
-  constructor({ inboxes, requests, recordSchema, now, logger }) {
-    this.inboxes      = inboxes
-    this.requests     = requests
-    this.recordSchema = recordSchema ?? null
-    this.now          = now ?? (() => new Date())
-    this.logger       = logger ?? null
+  constructor({ inboxes, requests, recordSchema, now, logger, enforceLimits }) {
+    this.inboxes       = inboxes
+    this.requests      = requests
+    this.recordSchema  = recordSchema ?? null
+    this.now           = now ?? (() => new Date())
+    this.logger        = logger ?? null
+    this.enforceLimits = enforceLimits !== false
   }
 
   /**
@@ -64,28 +70,39 @@ export class CaptureRequest {
    *   retryAfterSec?: number,
    * }>}
    */
-  async execute({ inboxToken, method, path, query, headers, body, contentType, size, ip }) {
-    const reserved = await this.inboxes.tryConsumeCaptureSlot(inboxToken, this.now())
-    if (!reserved.ok) {
-      if (reserved.reason === 'inbox_not_found') {
+  async execute({ inboxToken, method, path, query, headers, body, contentType, size, ip, upstreamResponse }) {
+    let inbox
+    if (this.enforceLimits) {
+      const reserved = await this.inboxes.tryConsumeCaptureSlot(inboxToken, this.now())
+      if (!reserved.ok) {
+        if (reserved.reason === 'inbox_not_found') {
+          return { outcome: Outcome.INBOX_NOT_FOUND, responseConfig: null, forwardTo: null }
+        }
+        if (reserved.reason === 'capacity_exceeded') {
+          return { outcome: Outcome.CAPACITY_EXCEEDED, responseConfig: null, forwardTo: null }
+        }
+        if (reserved.reason === 'rate_limited') {
+          const retryAfterSec = Math.max(1, Math.ceil((reserved.retryAfterMs ?? 60_000) / 1000))
+          return {
+            outcome:        Outcome.RATE_LIMITED,
+            responseConfig: null,
+            forwardTo:      null,
+            retryAfterSec,
+          }
+        }
         return { outcome: Outcome.INBOX_NOT_FOUND, responseConfig: null, forwardTo: null }
       }
-      if (reserved.reason === 'capacity_exceeded') {
-        return { outcome: Outcome.CAPACITY_EXCEEDED, responseConfig: null, forwardTo: null }
+      inbox = reserved.inbox
+    } else {
+      // Limits bypassed (local proxy mode): read the inbox directly. No slot
+      // is consumed, so the capture never counts against the lifetime cap or
+      // the sliding rate window.
+      inbox = await this.inboxes.findByToken(inboxToken)
+      if (!inbox) {
+        return { outcome: Outcome.INBOX_NOT_FOUND, responseConfig: null, forwardTo: null }
       }
-      if (reserved.reason === 'rate_limited') {
-        const retryAfterSec = Math.max(1, Math.ceil((reserved.retryAfterMs ?? 60_000) / 1000))
-        return {
-          outcome:        Outcome.RATE_LIMITED,
-          responseConfig: null,
-          forwardTo:      null,
-          retryAfterSec,
-        }
-      }
-      return { outcome: Outcome.INBOX_NOT_FOUND, responseConfig: null, forwardTo: null }
     }
 
-    const inbox = reserved.inbox
     const id  = this.requests.nextId()
     const now = this.now()
 
@@ -107,6 +124,11 @@ export class CaptureRequest {
       ip,
       now,
       expiresAt: inbox.expiresAt,
+      // Local proxy mode forwards BEFORE capturing and passes the upstream
+      // response in here, so the row is inserted complete — the SSE poller
+      // (cursor by id, emits each row once) then streams request + response
+      // together instead of a request that never gets its response.
+      upstreamResponse: upstreamResponse ?? null,
     })
 
     await this.requests.insert(req)

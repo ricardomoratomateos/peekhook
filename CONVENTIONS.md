@@ -10,7 +10,11 @@ independent work streams.
 
 - **Backend**: Node 20+, Fastify 4, native ESM (`"type": "module"`).
 - **Frontend**: Vite 5, React 18, react-router-dom 6, native ESM.
-- **Storage**: MongoDB (one database, multiple collections).
+- **CLI**: Bun runtime, `apps/cli` (`@peekhook/cli`), ships the
+  `peekgrok` binary via `bun build --compile`.
+- **Storage**: dual-target. MongoDB for the hosted target
+  (one database, multiple collections); `bun:sqlite` for the
+  local `peekgrok` target (one file, `~/.peekhook/peekgrok.db`).
 
 ## Layering (backend)
 
@@ -89,6 +93,27 @@ For new features adding new collections, follow the same
 naming pattern. Index list goes in `apps/api/src/shared/db.js`
 `connectDb()` and references the collection's TTL field if
 applicable.
+
+### Dual-target adapters (Mongo + SQLite)
+
+Every persistence port defined in a module's `domain/` has two
+adapters in `infra/persistence/`: `Mongo<Port>` (hosted) and
+`Sqlite<Port>` (local `peekgrok`). The domain and app layers
+never know which is wired — that choice lives in the entry
+points:
+
+- `apps/api/src/index.js` — hosted, wires the `Mongo*` adapters.
+- `apps/api/src/cli.js` — local, wires the `Sqlite*` adapters
+  against a `bun:sqlite` handle the `peekgrok` binary passes in.
+
+Both call the `buildApp(deps, options)` factory in `app.js`,
+which decorates the Fastify instance with whatever adapters it
+receives. **When you add a new persistence port, add both
+adapters and wire them in both entry points.** SQLite adapters
+export an idempotent `migrate(db)`; `cli.js` calls it at boot.
+Do not import `bun:sqlite` at module top-level in `apps/api` —
+the package must stay Node-compatible for the existing test
+suite (the `db` handle is injected by the caller).
 
 ## HTTP API conventions
 

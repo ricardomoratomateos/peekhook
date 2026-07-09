@@ -36,9 +36,13 @@ its weight against the curl-then-look-at-the-Inspector flow.
 
 ## Locked-in stack decisions
 
-- **Backend**: Fastify + MongoDB, no breaking changes planned.
+- **Backend**: Fastify, dual-target persistence behind the
+  `buildApp` DI factory. No breaking changes planned.
 - **Frontend**: Vite + React 18 + react-router, no SSR.
-- **Storage**: Mongo TTL 7 days, single database.
+- **CLI**: `peekgrok` (`apps/cli`), Bun-compiled single binary.
+  Local-first stack over SQLite + optional ngrok tunnel.
+- **Storage**: Mongo TTL 7 days (hosted) or `bun:sqlite` file
+  in `~/.peekhook` (local). Single database either way.
 - **Auth**: none, ever, unless pull justifies it.
 - **Hosting (planned)**: API on fly.io free tier, web on
   Cloudflare Pages. Not yet wired.
@@ -311,6 +315,19 @@ the rationale + effort remain as historical record.
 
 ## Update log
 
+- **v1.2**: local-first `peekgrok` CLI. New `apps/cli` package
+  (`@peekhook/cli`, Bun runtime) ships a single self-contained
+  binary that runs the whole stack — capture, inspector UI, SSE,
+  MCP — on the user's machine over `bun:sqlite`, no Mongo, no
+  signup, data in `~/.peekhook/peekgrok.db`. `peekgrok listen
+  <port>` opens an optional ngrok tunnel with a random inbox
+  token baked into the URL (`--no-tunnel` for localhost-only).
+  Enabled by a dual-target refactor: `apps/api/src/app.js` now
+  exposes a `buildApp(deps, options)` factory; `src/index.js`
+  wires the `Mongo*` adapters (hosted, unchanged) and the new
+  `src/cli.js` wires `Sqlite*` adapters. Every persistence port
+  gained a `Sqlite*` sibling; domain/app layers untouched.
+  Binary renamed `peektunnel` → `peekgrok`.
 - **v1.1**: security limits shipped end-to-end across the
   reception (body cap 1 MB, rate limit 60/min, gzip-bomb
   defense, header sanitization, IDOR audit, trust-proxy),
