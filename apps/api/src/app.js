@@ -59,9 +59,13 @@ import { getDb } from './shared/db.js'
  *   on that path. Other routes fall back to `getDb()` only when no
  *   decorator is registered.
  * @param {{
- *   sseEnabled?:   boolean,  // default true
- *   mcpEnabled?:   boolean,  // default true
- *   shareEnabled?: boolean,  // default true
+ *   sseEnabled?:   boolean,          // default true
+ *   mcpEnabled?:   boolean,          // default true
+ *   shareEnabled?: boolean,          // default true
+ *   cliInspectorSpa?: Buffer | null, // default null. When set, the
+ *     local CLI entry point decorates the app with this buffer and
+ *     `GET /i/:token` serves it (the inspector UI) instead of the
+ *     hosted 405 response. Hosted deployments leave it unset.
  * }} [options] Feature flags. Missing flags default to enabled.
  *   `sseEnabled=false` skips the live stream route; `mcpEnabled=false`
  *   skips the `POST /mcp` route; `shareEnabled=false` skips the
@@ -89,6 +93,7 @@ export async function buildApp(deps, options = {}) {
   if (deps.mcpAuditLog)         app.decorate('mcpAuditLog',         deps.mcpAuditLog)
   if (deps.mcpSearchReadModel)  app.decorate('mcpSearchReadModel',  deps.mcpSearchReadModel)
   if (deps.mcpRateLimiter)      app.decorate('mcpRateLimiter',      deps.mcpRateLimiter)
+  if (options.cliInspectorSpa)  app.decorate('spaIndexHtml',        options.cliInspectorSpa)
 
   app.decorate('features', options)
 

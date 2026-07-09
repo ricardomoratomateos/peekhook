@@ -5,7 +5,6 @@ import { MongoClient } from 'mongodb'
 
 import { SandboxInbox } from './domain/SandboxInbox.js'
 import { MongoInboxRepository } from './infra/persistence/MongoInboxRepository.js'
-import { MongoRequestListReadModel } from './infra/persistence/MongoRequestListReadModel.js'
 
 let memServer
 let mongoClient
@@ -24,12 +23,12 @@ async function teardownMongo() {
   if (memServer)   await memServer.stop()
 }
 
-async function startIngest({ features } = {}) {
+async function startIngest({ spaIndexHtml } = {}) {
   const sharedDbModule = await import('../shared/db.js')
   sharedDbModule.__setDbForTest(db)
   const ingestRouteMod = await import('./infra/http/ingestRoute.js')
   const fastify = Fastify({ logger: false })
-  if (features) fastify.decorate('features', features)
+  if (spaIndexHtml) fastify.decorate('spaIndexHtml', spaIndexHtml)
   await fastify.register(ingestRouteMod.default)
   await fastify.ready()
   return fastify
@@ -41,7 +40,9 @@ async function seedInbox() {
   return inbox
 }
 
-describe('GET /i/:token capture (hosted target)', () => {
+const SPA_HTML = '<!doctype html><html><body>spa</body></html>'
+
+describe('GET /i/* — hosted target (no SPA decorated)', () => {
   beforeAll(async () => { await setupMongo() })
   afterAll(async () => { await teardownMongo() })
 
@@ -60,7 +61,11 @@ describe('GET /i/:token capture (hosted target)', () => {
     }
   })
 
-  it('captures a non-browser GET (e.g. OAuth callback / verification ping)', async () => {
+  it('rejects a non-browser GET (Accept: application/json) with 405', async () => {
+    // The WIP design dropped "capture non-browser GET" (OAuth callbacks,
+    // Slack/Twilio verification pings). All GETs are 405 in hosted mode —
+    // callers that need to receive GETs should use the mcp_token-bound
+    // ingest flow. See apps/api/src/inbox/infra/http/ingestRoute.js.
     const inbox = await seedInbox()
     const fastify = await startIngest()
     try {
@@ -69,28 +74,67 @@ describe('GET /i/:token capture (hosted target)', () => {
         url: `/i/${inbox.token}?code=abc123`,
         headers: { accept: 'application/json' },
       })
-      expect(res.statusCode).toBe(200)
-      const body = JSON.parse(res.body)
-      expect(body.ok).toBe(true)
-      expect(typeof body.id).toBe('string')
+      expect(res.statusCode).toBe(405)
+    } finally {
+      await fastify.close()
+    }
+  })
+})
 
-      const captures = await new MongoRequestListReadModel(db).list({ inboxToken: inbox.token })
-      expect(captures).toHaveLength(1)
-      expect(captures[0].method).toBe('GET')
-      expect(captures[0].query).toEqual({ code: 'abc123' })
+describe('GET /i/* — CLI target (spaIndexHtml decorated)', () => {
+  beforeAll(async () => { await setupMongo() })
+  afterAll(async () => { await teardownMongo() })
+
+  it('serves the inspector SPA at /i/<token>', async () => {
+    const inbox = await seedInbox()
+    const fastify = await startIngest({ spaIndexHtml: Buffer.from(SPA_HTML) })
+    try {
+      const res = await fastify.inject({
+        method: 'GET',
+        url: `/i/${inbox.token}`,
+        headers: { accept: 'text/html' },
+      })
+      expect(res.statusCode).toBe(200)
+      expect(res.headers['content-type']).toMatch(/text\/html/)
+      expect(res.body).toBe(SPA_HTML)
     } finally {
       await fastify.close()
     }
   })
 
-  it('does NOT register a capturing GET route in local SPA mode (ingestGetGuard=false)', async () => {
+  it('serves the inspector SPA at /i/<token>/<subpath> too (regression: reload on /schema, /mcp, /reply)', async () => {
     const inbox = await seedInbox()
-    const fastify = await startIngest({ features: { ingestGetGuard: false } })
+    const fastify = await startIngest({ spaIndexHtml: Buffer.from(SPA_HTML) })
     try {
-      // No GET route is registered, so it falls through to Fastify's
-      // default 404 (in production the SPA fallback serves index.html).
-      const res = await fastify.inject({ method: 'GET', url: `/i/${inbox.token}` })
-      expect(res.statusCode).toBe(404)
+      for (const subpath of ['schema', 'mcp', 'reply', 'forward', 'docs', 'foo/bar/baz']) {
+        const res = await fastify.inject({
+          method: 'GET',
+          url: `/i/${inbox.token}/${subpath}`,
+        })
+        expect(res.statusCode, `subpath ${subpath}`).toBe(200)
+        expect(res.body, `subpath ${subpath}`).toBe(SPA_HTML)
+      }
+    } finally {
+      await fastify.close()
+    }
+  })
+
+  it('does not intercept POST/PUT/PATCH/DELETE on /i/<token> (capture methods still work)', async () => {
+    const inbox = await seedInbox()
+    const fastify = await startIngest({ spaIndexHtml: Buffer.from(SPA_HTML) })
+    try {
+      for (const method of ['POST', 'PUT', 'PATCH', 'DELETE']) {
+        const res = await fastify.inject({
+          method,
+          url: `/i/${inbox.token}`,
+          payload: '{"hello":"world"}',
+          headers: { 'content-type': 'application/json' },
+        })
+        // The narrower `/i/:token` capture route is registered first and
+        // wins for the exact path. The wildcard `/i/*` only catches
+        // /i/<token>/<subpath> GETs.
+        expect(res.statusCode, method).toBe(200)
+      }
     } finally {
       await fastify.close()
     }

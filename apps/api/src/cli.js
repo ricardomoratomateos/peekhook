@@ -65,12 +65,20 @@ export async function startLocalServer({ port, db, dataDir, webDist, corsOrigin 
   const mcpSearchReadModel = new SqliteMcpRequestSearchReadModel(db)
   const mcpRateLimiter     = new InMemoryMcpRateLimiter()
 
-  // When we serve the inspector SPA on this same origin, its client-side
-  // route `/i/:token` collides with the ingest GET-405 guard. Detect that
-  // up front so we can tell `buildApp` to skip the guard and let the GET
-  // fall through to the SPA fallback below.
-  const distPath = webDist ? resolve(webDist) : null
-  const willServeSpa = Boolean(distPath && existsSync(join(distPath, 'index.html')))
+  // In CLI/local mode the same Fastify serves both the API and the
+  // SPA, so we read the built `index.html` up front and decorate the
+  // app with it. The `GET /i/*` route (see `ingestRoute.js`) checks
+  // for this decoration and serves the SPA instead of the hosted
+  // 405. The root `/` path is also served from this buffer, with an
+  // auto-mint script prepended (see `rootIndexHtml` below) so
+  // `peekgrok` users land directly in a fresh inbox.
+  const spaIndexHtml = webDist && existsSync(resolve(webDist))
+    ? readFileSync(join(resolve(webDist), 'index.html'))
+    : null
+  const AUTO_MINT_SCRIPT = `<script>(function(){try{var s=document.createElement('style');s.id='peekhook-cli-hide';s.textContent='html{background:#0a0a0a}body{visibility:hidden}';(document.head||document.documentElement).appendChild(s)}catch(_){}fetch('/api/inboxes',{method:'POST'}).then(function(r){if(!r.ok)throw new Error('http '+r.status);return r.json()}).then(function(inbox){try{localStorage.setItem('peekhook-'+inbox.token,JSON.stringify({url:inbox.url,expiresAt:inbox.expiresAt,mcpToken:inbox.mcp_token}))}catch(_){}window.location.replace('/i/'+inbox.token)}).catch(function(){var s=document.getElementById('peekhook-cli-hide');if(s)s.remove()})})();</script>`
+  const rootIndexHtml = spaIndexHtml
+    ? Buffer.from(spaIndexHtml.toString('utf8').replace(/<head>/i, '<head>' + AUTO_MINT_SCRIPT))
+    : null
 
   const app = await buildApp(
     {
@@ -90,12 +98,10 @@ export async function startLocalServer({ port, db, dataDir, webDist, corsOrigin 
       mcpRateLimiter,
     },
     {
-      sseEnabled:   true,
-      mcpEnabled:   true,
-      shareEnabled: true,
-      // Skip the ingest GET-405 guard only when we own the SPA on this
-      // origin; otherwise keep the hosted default (guard on).
-      ingestGetGuard: !willServeSpa,
+      sseEnabled:      true,
+      mcpEnabled:      true,
+      shareEnabled:    true,
+      cliInspectorSpa: spaIndexHtml,
     },
   )
 
@@ -107,8 +113,9 @@ export async function startLocalServer({ port, db, dataDir, webDist, corsOrigin 
   }
 
   if (webDist) {
-    if (!willServeSpa) {
-      app.log.warn(`webDist has no index.html: ${distPath} — UI will 404 on /`)
+    const distPath = resolve(webDist)
+    if (!existsSync(distPath)) {
+      app.log.warn(`webDist path does not exist: ${distPath} — UI will 404 on /`)
     } else {
       // Cache the small dist files in memory at boot. peekhook's
       // built UI is a few hundred KB total; inlining is faster than
@@ -126,7 +133,6 @@ export async function startLocalServer({ port, db, dataDir, webDist, corsOrigin 
         '.woff2':'font/woff2',
         '.map':  'application/json; charset=utf-8',
       }
-      const indexHtml = readFileSync(join(distPath, 'index.html'))
       const assetCache = new Map()
       const loadAsset = (rel) => {
         if (assetCache.has(rel)) return assetCache.get(rel)
@@ -150,16 +156,16 @@ export async function startLocalServer({ port, db, dataDir, webDist, corsOrigin 
         return reply.type(asset.type).send(asset.buf)
       })
 
-      // SPA fallback: any GET that doesn't match an API/MCP route serves
-      // index.html so the React router can take over. Note `/i/` is NOT
-      // excluded here: the capture methods (POST/PUT/PATCH/DELETE) are
-      // owned by ingestRoute, so only a GET /i/:token reaches this handler
-      // — and that IS the inspector's SPA route (see ingestGetGuard above).
+      // SPA fallback: any GET that doesn't match an API/ingest/MCP
+      // route serves index.html so the React router can take over.
+      // `/` gets the auto-mint variant (so the CLI user lands in a
+      // fresh inbox) and every other path gets the plain SPA.
       app.setNotFoundHandler((request, reply) => {
         if (request.method !== 'GET' && request.method !== 'HEAD') {
           return reply.code(404).send({ error: 'Not found' })
         }
         if (request.url.startsWith('/api/') ||
+            request.url.startsWith('/i/')    ||
             request.url.startsWith('/mcp')   ||
             request.url.startsWith('/health')) {
           return reply.code(404).send({ error: 'Not found' })
@@ -168,15 +174,21 @@ export async function startLocalServer({ port, db, dataDir, webDist, corsOrigin 
         // live at the dist root, not under /assets/. Try to serve the
         // requested path as a real file before falling back to the SPA
         // shell — otherwise `/favicon.svg` gets index.html (text/html) and
-        // the icon never loads. Real client-side routes (`/i/:token`) have
-        // no matching file, so loadAsset returns null and they fall through
-        // to index.html as before. `loadAsset` already guards traversal.
+        // the icon never loads. Real client-side routes have no matching
+        // file, so loadAsset returns null and they fall through. `loadAsset`
+        // already guards traversal.
         const pathname = request.url.split('?')[0].replace(/^\/+/, '')
         if (pathname && pathname !== 'index.html') {
           const asset = loadAsset(pathname)
           if (asset) return reply.type(asset.type).send(asset.buf)
         }
-        return reply.type('text/html; charset=utf-8').send(indexHtml)
+        if (request.url === '/' && rootIndexHtml) {
+          return reply.type('text/html; charset=utf-8').send(rootIndexHtml)
+        }
+        if (spaIndexHtml) {
+          return reply.type('text/html; charset=utf-8').send(spaIndexHtml)
+        }
+        return reply.code(404).send({ error: 'Not found' })
       })
     }
   }
