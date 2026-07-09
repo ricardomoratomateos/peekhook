@@ -6,6 +6,8 @@ import { ScriptOutcome } from '@peekhook/api/src/scripting/domain/ScriptErrors.j
 
 const BODY_LIMIT_BYTES = 1_048_576
 
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+
 /**
  * startProxyServer — the ngrok-style transparent sniffer surface of
  * `peekgrok`.
@@ -49,6 +51,7 @@ const BODY_LIMIT_BYTES = 1_048_576
  *   capturedRequestRepo: import('@peekhook/api/src/inbox/domain/CapturedRequestRepository.js').CapturedRequestRepository,
  *   ingestOrigin?:       string,   // for the ForwardRequest loop guard
  *   forwardTimeoutMs?:   number,
+ *   ignorePaths?:        string[], // path prefixes to forward WITHOUT capturing
  *   logger?:             boolean | object,
  * }} opts
  * @returns {Promise<import('fastify').FastifyInstance>}
@@ -62,12 +65,32 @@ export async function startProxyServer({
   capturedRequestRepo,
   ingestOrigin,
   forwardTimeoutMs = 30_000,
+  ignorePaths = [],
+  inspectorBase,
   logger = false,
 }) {
   if (!upstream) throw new Error('startProxyServer: `upstream` is required')
   if (!sessionToken) throw new Error('startProxyServer: `sessionToken` is required')
 
   const upstreamBase = String(upstream).replace(/\/+$/, '')
+
+  // When an inspector base is provided, a small set of inspector-owned
+  // paths are served by peekhook's local inspector instead of being
+  // forwarded to your app — so a public ngrok share link (which tunnels
+  // THIS proxy port) can actually render the read-only capture view. The
+  // set is deliberately narrow; if your app happens to use one of these
+  // prefixes it would be shadowed, which is why they're logged at boot.
+  const inspectorTarget = inspectorBase ? String(inspectorBase).replace(/\/+$/, '') : null
+  const RESERVED_FOR_INSPECTOR = [/^\/c(\/|$)/, /^\/assets\//, /^\/api\/requests(\/|$)/]
+  const isInspectorPath = (p) => Boolean(inspectorTarget) && RESERVED_FOR_INSPECTOR.some((re) => re.test(p))
+
+  // Noise filter: requests whose path starts with any of these prefixes
+  // are still forwarded (your app keeps working) but NOT captured, so the
+  // inspector feed isn't drowned in health checks, asset requests, etc.
+  const ignoreList = (ignorePaths || [])
+    .map((p) => String(p).trim())
+    .filter(Boolean)
+  const shouldIgnore = (path) => ignoreList.some((prefix) => path.startsWith(prefix))
 
   const capture = new CaptureRequest({
     inboxes:       inboxRepo,
@@ -85,8 +108,12 @@ export async function startProxyServer({
   // Capture the raw body byte-for-byte for every content type so we can
   // both record it and replay it upstream unchanged.
   const captureBody = (req, body, done) => {
-    req.rawBody     = body.toString('utf8')
-    req.rawBodySize = body.length
+    // Keep the exact bytes for a byte-faithful forward, and a UTF-8 view
+    // for the capture record (lossy for binary uploads, but the record
+    // is for display; the forward below uses the raw buffer).
+    req.rawBodyBuffer = body
+    req.rawBody       = body.toString('utf8')
+    req.rawBodySize   = body.length
     done(null, null)
   }
   // Override Fastify's built-in application/json parser (which would consume
@@ -109,6 +136,22 @@ export async function startProxyServer({
     const contentType = request.headers['content-type'] ?? ''
     const ip          = (request.socket && request.socket.remoteAddress) || request.ip
 
+    // Inspector-owned paths (share view + its assets + the public share
+    // API) are relayed to the local inspector, NOT the upstream app, and
+    // are never captured. This is what lets a public ngrok share link
+    // resolve in sniffer mode (the tunnel points at this proxy port).
+    if (isInspectorPath(path)) {
+      const insp = await new ForwardRequest({
+        targetUrl:    inspectorTarget + request.url,
+        method:       request.method,
+        headers:      request.headers,
+        body:         request.rawBodyBuffer ?? rawBody,
+        ingestOrigin,
+        timeoutMs:    forwardTimeoutMs,
+      }).execute()
+      return respondFromForward(reply, insp)
+    }
+
     // Peek at the session inbox to decide mock-vs-forward BEFORE capturing.
     // We capture LAST (with the response inline) so the row is inserted
     // complete and the SSE poller streams request + response together.
@@ -128,10 +171,16 @@ export async function startProxyServer({
       size,
       ip,
     }
-    const record = (upstreamResponse) =>
-      capture.execute({ ...captureBase, upstreamResponse }).catch(() => {
-        /* capture must never change what the caller sees */
-      })
+    // Ignored paths (health checks, assets, …) are proxied but not
+    // recorded: swap `record` for a no-op so the mock/forward flow is
+    // unchanged and only the capture is skipped.
+    const ignored = shouldIgnore(path)
+    const record = ignored
+      ? async () => {}
+      : (upstreamResponse) =>
+          capture.execute({ ...captureBase, upstreamResponse }).catch(() => {
+            /* capture must never change what the caller sees */
+          })
 
     // Mock reply wins over forwarding when explicitly enabled (see header).
     const cfg = inbox.responseConfig
@@ -156,68 +205,77 @@ export async function startProxyServer({
         headers:     { 'content-type': cfg.contentType },
         body,
         contentType: cfg.contentType,
-        durationMs:  0,
+        durationMs:  cfg.delayMs > 0 ? cfg.delayMs : 0,
         mocked:      true,
       })
+      if (Number.isInteger(cfg.delayMs) && cfg.delayMs > 0) {
+        await sleep(cfg.delayMs)
+      }
       return reply.code(cfg.status).header('content-type', cfg.contentType).send(body)
     }
 
     // Forward to the upstream app, preserving the original path + query.
+    // Send the raw request bytes (not the UTF-8 view) so binary uploads
+    // reach the upstream intact.
     const fwd = await new ForwardRequest({
       targetUrl:    upstreamBase + request.url,
       method:       request.method,
       headers:      request.headers,
-      body:         rawBody,
+      body:         request.rawBodyBuffer ?? rawBody,
       ingestOrigin,
       timeoutMs:    forwardTimeoutMs,
     }).execute()
 
-    let upstreamDto
-    let replyStatus
-    let replyHeaders
-    let replyBody
-
-    if (fwd.ok) {
-      upstreamDto  = { status: fwd.status, headers: fwd.headers, body: fwd.body, contentType: fwd.contentType, durationMs: fwd.durationMs }
-      replyStatus  = fwd.status
-      replyHeaders = fwd.headers
-      replyBody    = fwd.body
-    } else if (fwd.error === 'timeout') {
-      upstreamDto = { error: 'timeout', message: fwd.message, durationMs: fwd.durationMs }
-      replyStatus = 504
-      replyBody   = { error: 'upstream timeout', message: fwd.message }
-    } else {
-      upstreamDto = { error: fwd.error, message: fwd.message, durationMs: fwd.durationMs }
-      replyStatus = 502
-      replyBody   = { error: 'upstream unreachable', message: fwd.message }
-    }
+    const upstreamDto = fwd.ok
+      ? { status: fwd.status, headers: fwd.headers, body: fwd.body, contentType: fwd.contentType, durationMs: fwd.durationMs }
+      : { error: fwd.error, message: fwd.message, durationMs: fwd.durationMs }
 
     await record(upstreamDto)
 
-    const out = reply.code(replyStatus)
-    if (replyHeaders && typeof replyHeaders === 'object') {
-      for (const [k, v] of Object.entries(replyHeaders)) {
-        const lk = k.toLowerCase()
-        if (lk === 'content-type') continue
-        // `fetch` already decompressed the upstream body, so the upstream's
-        // content-encoding no longer describes what we send, and its
-        // content-length no longer matches. Relaying either makes the
-        // browser try to gunzip plain text → ERR_CONTENT_DECODING_FAILED.
-        // Drop both; Fastify sets the correct length for the body we send.
-        if (lk === 'content-encoding' || lk === 'content-length') continue
-        out.header(k, v)
-      }
-      if (replyHeaders['content-type']) {
-        out.header('content-type', replyHeaders['content-type'])
-      } else if (fwd.ok) {
-        out.header('content-type', fwd.contentType || 'application/octet-stream')
-      }
-    } else if (fwd.ok) {
-      out.header('content-type', fwd.contentType || 'application/octet-stream')
-    }
-    return out.send(replyBody)
+    return respondFromForward(reply, fwd)
   }
 
   await app.listen({ port, host })
   return app
+}
+
+/**
+ * Relay a `ForwardRequest` result to the client verbatim. Shared by the
+ * upstream-forward path and the inspector-path relay. Binary bodies are
+ * sent as raw bytes; `content-encoding` / `content-length` are dropped
+ * because `fetch` already decoded the body and set a new length.
+ */
+function respondFromForward(reply, fwd) {
+  let status
+  let headers
+  let body
+
+  if (fwd.ok) {
+    status  = fwd.status
+    headers = fwd.headers
+    body    = fwd.isBinary && fwd.bodyBuffer ? fwd.bodyBuffer : fwd.body
+  } else if (fwd.error === 'timeout') {
+    status = 504
+    body   = { error: 'upstream timeout', message: fwd.message }
+  } else {
+    status = 502
+    body   = { error: 'upstream unreachable', message: fwd.message }
+  }
+
+  const out = reply.code(status)
+  if (headers && typeof headers === 'object') {
+    for (const [k, v] of Object.entries(headers)) {
+      const lk = k.toLowerCase()
+      if (lk === 'content-type' || lk === 'content-encoding' || lk === 'content-length') continue
+      out.header(k, v)
+    }
+    if (headers['content-type']) {
+      out.header('content-type', headers['content-type'])
+    } else if (fwd.ok) {
+      out.header('content-type', fwd.contentType || 'application/octet-stream')
+    }
+  } else if (fwd.ok) {
+    out.header('content-type', fwd.contentType || 'application/octet-stream')
+  }
+  return out.send(body)
 }

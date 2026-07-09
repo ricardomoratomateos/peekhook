@@ -175,6 +175,51 @@ describe('ForwardRequest', () => {
     expect(result.message).toBe('ECONNREFUSED')
   })
 
+  it('reads a binary upstream response as raw bytes, not mangled UTF-8', async () => {
+    const bytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0xff, 0xfe])  // PNG-ish header + non-UTF8 bytes
+    const fetchImpl = async () => new Response(bytes, {
+      status: 200,
+      headers: { 'content-type': 'image/png' },
+    })
+    const f = new ForwardRequest({
+      targetUrl:    'http://target.example/logo.png',
+      method:       'GET',
+      headers:      {},
+      body:         '',
+      ingestOrigin: 'https://peekhook.example',
+      fetchImpl,
+      now: () => 0,
+    })
+
+    const result = await f.execute()
+    expect(result.ok).toBe(true)
+    expect(result.isBinary).toBe(true)
+    expect(Buffer.isBuffer(result.bodyBuffer)).toBe(true)
+    expect(result.bodyBuffer.equals(bytes)).toBe(true)
+    expect(result.body).toMatch(/^\[binary \d+ bytes\]$/)
+  })
+
+  it('omits the request body for GET/HEAD so undici does not throw', async () => {
+    let seenInit = null
+    const fetchImpl = async (_url, init) => {
+      seenInit = init
+      return new Response('hi', { status: 200, headers: { 'content-type': 'text/plain' } })
+    }
+    const f = new ForwardRequest({
+      targetUrl:    'http://target.example/callback',
+      method:       'GET',
+      headers:      {},
+      body:         'should-be-dropped',
+      ingestOrigin: 'https://peekhook.example',
+      fetchImpl,
+      now: () => 0,
+    })
+
+    const result = await f.execute()
+    expect(result.ok).toBe(true)
+    expect(seenInit.body).toBeUndefined()
+  })
+
   it('returns fetch_failed when targetUrl is not a valid URL', async () => {
     const f = new ForwardRequest({
       targetUrl:    'not a url',

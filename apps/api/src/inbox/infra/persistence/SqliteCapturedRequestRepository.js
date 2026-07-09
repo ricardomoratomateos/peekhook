@@ -73,6 +73,9 @@ export class SqliteCapturedRequestRepository extends CapturedRequestRepository {
       updateUpstream: db.prepare(
         'UPDATE requests SET upstream_response = ? WHERE id = ?',
       ),
+      deleteByInbox: db.prepare(
+        'DELETE FROM requests WHERE inbox_token = ?',
+      ),
     }
   }
 
@@ -108,6 +111,23 @@ export class SqliteCapturedRequestRepository extends CapturedRequestRepository {
       return reread?.share_id ?? fresh
     }
     return this.db.transaction(readAndMaybeWrite)()
+  }
+
+  async deleteByInboxToken(inboxToken) {
+    const res = this.stmt.deleteByInbox.run(inboxToken)
+    return res?.changes ?? 0
+  }
+
+  async deleteByIds(inboxToken, ids) {
+    const valid = (Array.isArray(ids) ? ids : []).filter(isValidId)
+    if (valid.length === 0) return 0
+    // Build placeholders for the IN clause — the id set is user-supplied
+    // but each element is regex-validated (24 hex), so no injection risk.
+    const placeholders = valid.map(() => '?').join(', ')
+    const res = this.db
+      .query(`DELETE FROM requests WHERE inbox_token = ? AND id IN (${placeholders})`)
+      .run(inboxToken, ...valid)
+    return res?.changes ?? 0
   }
 }
 

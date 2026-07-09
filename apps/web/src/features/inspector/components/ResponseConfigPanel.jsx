@@ -15,13 +15,16 @@ return JSON.stringify({
 });
 `
 
+const DELAY_MAX = 30000
+
 function makeDraft(value) {
-  if (!value) return { ...RESPONSE_DEFAULTS, body: '', scriptEnabled: false, script: '' }
+  if (!value) return { ...RESPONSE_DEFAULTS, body: '', delayMs: 0, scriptEnabled: false, script: '' }
   return {
     enabled:       Boolean(value.enabled),
     status:        value.status        ?? 200,
     contentType:   value.contentType   ?? 'application/json',
     body:          value.body          ?? '',
+    delayMs:       value.delayMs        ?? 0,
     scriptEnabled: Boolean(value.scriptEnabled),
     script:        value.script        ?? '',
   }
@@ -29,15 +32,22 @@ function makeDraft(value) {
 
 function isDirty(draft, value) {
   if (!value) {
-    return draft.body !== '' || draft.scriptEnabled || draft.script !== ''
+    return draft.body !== '' || draft.delayMs > 0 || draft.scriptEnabled || draft.script !== ''
   }
   return (
     draft.status !== value.status ||
     draft.contentType !== value.contentType ||
     draft.body !== value.body ||
+    draft.delayMs !== (value.delayMs || 0) ||
     draft.scriptEnabled !== Boolean(value.scriptEnabled) ||
     draft.script !== (value.script || '')
   )
+}
+
+function clampDelay(raw) {
+  const n = Math.floor(Number(raw))
+  if (!Number.isFinite(n) || n < 0) return 0
+  return Math.min(n, DELAY_MAX)
 }
 
 export default function ResponseConfigPanel({ token, value, onRequestSave, onRequestClear, busy }) {
@@ -61,6 +71,7 @@ export default function ResponseConfigPanel({ token, value, onRequestSave, onReq
       status:  Number(draft.status),
       contentType: draft.contentType,
       body: draft.body,
+      delayMs: clampDelay(draft.delayMs),
       scriptEnabled: draft.scriptEnabled,
       script: draft.script.slice(0, SCRIPT_MAX),
     }
@@ -155,6 +166,26 @@ export default function ResponseConfigPanel({ token, value, onRequestSave, onReq
               spellCheck={false}
               style={rc.textarea}
             />
+          </div>
+
+          <div style={rc.field}>
+            <label style={rc.label}>delay · simulate a slow upstream (ms)</label>
+            <input
+              type="number"
+              min={0}
+              max={DELAY_MAX}
+              step={100}
+              value={draft.delayMs}
+              onChange={e => patch({ delayMs: e.target.value })}
+              onBlur={e => patch({ delayMs: clampDelay(e.target.value) })}
+              placeholder="0"
+              style={rc.select}
+            />
+            <div style={rc.switchHint}>
+              {draft.delayMs > 0
+                ? `holds the reply ${clampDelay(draft.delayMs)}ms before responding · max ${DELAY_MAX}`
+                : 'reply immediately · raise to test client timeout + retry logic'}
+            </div>
           </div>
 
           <button

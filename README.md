@@ -40,10 +40,21 @@ or set `MONGODB_URI` to any reachable Mongo URL.
 
 ## What you can do today
 
-- Capture any non-GET HTTP method (POST/PUT/PATCH/DELETE) at `/i/:token`
+- Capture POST/PUT/PATCH/DELETE at `/i/:token` — plus non-browser GET
+  (OAuth callbacks, verification pings): a GET is captured unless it's a
+  browser navigation (`Accept: text/html`), which still gets a 405
+  pointing at the inspector
 - Live SSE stream of new captures in the browser
 - Inspect method, headers, query params, body, IP, content-type, size
-- Configure a static mock reply (status + content-type + body)
+- Configure a static mock reply (status + content-type + body), with an
+  optional **response delay** (0–30s) to simulate a slow / timing-out
+  upstream and exercise your client's retry logic
+- **Replay** a captured event against the mock reply, or against the
+  inbox's configured forward target — optionally **editing** the method
+  and body first (the tweak-and-re-send debug loop)
+- **Export** all captures as a downloadable JSON document, and **clear**
+  an inbox's captures (frees the 1,000-capture cap without minting a new
+  URL)
 - Auto-expire after 7 days (TTL on the inbox)
 
 ## Try it
@@ -124,12 +135,28 @@ Pass `--fresh` to force a new one. The inspector URL it prints
 carries the MCP bearer token in the fragment (`#mcp=…`) so the MCP
 tab shows it automatically; the token never touches the server.
 
+### Share links
+
+When a tunnel is up, the inspector's **share** button builds a
+`/c/<id>` link against the public ngrok URL, not `localhost`, so you
+can hand it to a teammate. In webhook-inbox mode ngrok exposes the
+inspector directly. In sniffer mode ngrok points at your app, so
+peekgrok reserves three path prefixes on the tunneled proxy —
+`/c`, `/assets`, `/api/requests` — and serves those from the local
+inspector instead of forwarding them (everything else still reaches
+your app). If your app uses one of those prefixes it would be
+shadowed; peekgrok prints the reserved set at startup. On the hosted
+instance, share links use the request host (e.g. `peekhook.dev`).
+
 ### Flags
 
 - `--to <port|url>` — sniffer mode: forward all traffic to your app
   (`--to 8080` or `--to http://localhost:8080`).
 - `--port <port>` — inspector / API / MCP port (default `4041`, local only).
 - `--proxy-port <port>` — sniffer port ngrok tunnels (default `4042`).
+- `--ignore <p1,p2,…>` — comma-separated path prefixes to forward but
+  NOT capture, to keep noise (health checks, assets) out of the feed
+  (e.g. `--ignore /health,/assets,/favicon.ico`).
 - `--no-tunnel` — skip ngrok, serve on localhost only.
 - `--ngrok-url <domain>` — use a reserved ngrok domain, e.g. `my.ngrok.app`.
 - `--ngrok-region <r>` — ngrok region (omit to honor your
@@ -142,9 +169,11 @@ tab shows it automatically; the token never touches the server.
 Cross-compile all targets (darwin/linux/windows) with
 `bun run build:all` → `dist/peekgrok-<os>-<arch>`.
 
-> **Note:** the proxy relays the upstream response body as UTF-8
-> text (fine for API / XHR / webhook traffic). Binary assets
-> (images, fonts) proxied through it will be mangled.
+> **Note:** the proxy relays text responses (JSON/XML/HTML/plain) as
+> UTF-8 and binary responses (images, fonts, octet-stream) as raw bytes,
+> so binary assets pass through intact. The capture record stores a
+> `[binary N bytes]` placeholder for binary bodies rather than the raw
+> bytes.
 
 ## Architecture
 
@@ -185,13 +214,23 @@ API surface:
 | GET    | `/api/inboxes/:token`                  | inbox metadata                |
 | GET    | `/api/inboxes/:token/requests`         | paginated list of captures    |
 | GET    | `/api/inboxes/:token/requests/:id`     | single capture by id          |
+| GET    | `/api/inboxes/:token/export`           | download all captures as JSON |
+| DELETE | `/api/inboxes/:token/requests`         | clear captures + reset cap    |
 | PUT    | `/api/inboxes/:token/response`         | configure mock reply          |
 | DELETE | `/api/inboxes/:token/response`         | clear mock reply              |
+| PUT    | `/api/inboxes/:token/forward`          | configure forward target      |
+| POST   | `/api/inboxes/:token/replay`           | replay event (mock or forward)|
 | GET    | `/api/inboxes/:token/stream`           | SSE stream of new captures    |
 | POST   | `/i/:token`                            | capture endpoint              |
 
-GET on `/i/:token` returns 405. It is reserved for the
-inspector UI, not for capture.
+`POST /api/inboxes/:token/replay` takes `{ eventId, mode, mutations }`:
+`mode` is `mock` (default — replay the inbox's own reply) or `forward`
+(re-send to the inbox's configured `forwardTo`); `mutations` optionally
+overrides `{ method, path, headers, body }` before replay.
+
+A **browser** GET on `/i/:token` (`Accept: text/html`) returns 405 —
+reserved for the inspector UI. A **non-browser** GET is captured, so
+GET-based webhooks (OAuth callbacks, verification pings) work.
 
 ## Design system
 
@@ -208,9 +247,11 @@ open product questions we're deferring until we have users.
 
 ## Status
 
-v1.1 shipped. All 16 candidate features and all 16 security /
-business limits landed. 319 / 319 backend tests passing
-across 37 files. Two ways to run it: `docker compose up`
+v1.3 shipped. All 16 candidate features and all 16 security /
+business limits landed, plus the v1.3 usability batch (replay
+to forward + edit-and-replay, mock-reply delay, GET capture,
+export, clear-inbox, binary-safe sniffer + noise filter).
+340 / 340 backend tests passing across 39 files. Two ways to run it: `docker compose up`
 (mongo + api + web with healthchecks and an SSE-friendly
 nginx in front of the web bundle), or the `peekgrok` local
 CLI (SQLite + ngrok, no Mongo). Public deploy — fly.io (API)

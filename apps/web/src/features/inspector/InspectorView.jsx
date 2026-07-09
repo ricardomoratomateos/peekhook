@@ -185,6 +185,8 @@ export default function InspectorView({ tab: tabProp }) {
           inboxUrl={inboxUrl}
           liveStatus={liveStatus}
           newIds={newIds}
+          onCleared={() => setRequests([])}
+          onRemoved={(ids) => setRequests(prev => prev.filter(r => !ids.includes(r.id)))}
         />
       )}
       {activeTab === 'reply' && <ReplyPage token={token} />}

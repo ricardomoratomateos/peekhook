@@ -91,7 +91,21 @@ describe('validateResponseConfig — security limits', () => {
 
   it('accepts a baseline valid config', () => {
     const cleaned = validateResponseConfig(baseValid)
-    expect(cleaned).toEqual(baseValid)
+    // delayMs defaults to 0 (latency-simulation feature).
+    expect(cleaned).toEqual({ ...baseValid, delayMs: 0 })
+  })
+
+  it('accepts an in-range delayMs and defaults it to 0', () => {
+    expect(validateResponseConfig(baseValid).delayMs).toBe(0)
+    expect(validateResponseConfig({ ...baseValid, delayMs: 2500 }).delayMs).toBe(2500)
+    expect(validateResponseConfig({ ...baseValid, delayMs: 30000 }).delayMs).toBe(30000)
+  })
+
+  it('rejects a delayMs that is negative, over the cap, or non-integer', () => {
+    expect(() => validateResponseConfig({ ...baseValid, delayMs: -1 })).toThrow(/delayMs/)
+    expect(() => validateResponseConfig({ ...baseValid, delayMs: 30001 })).toThrow(/delayMs/)
+    expect(() => validateResponseConfig({ ...baseValid, delayMs: 1.5 })).toThrow(/delayMs/)
+    expect(() => validateResponseConfig({ ...baseValid, delayMs: '100' })).toThrow(/delayMs/)
   })
 
   it('accepts null (clear)', () => {

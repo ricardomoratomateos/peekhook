@@ -13,6 +13,8 @@ import { RecordSchema } from '../../../schema-history/app/RecordSchema.js'
 const BODY_LIMIT_BYTES     = 1_048_576
 const CAPTURE_METHODS      = ['POST', 'PUT', 'PATCH', 'DELETE']
 
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+
 /**
  * Wire the CaptureRequest use case from the per-request fastify
  * instance. In production the orchestrator (`buildApp`) decorates
@@ -150,6 +152,12 @@ async function captureHandler(request, reply) {
         return reply.code(500).send({ error: 'script threw' })
       }
     }
+    // Simulated latency: hold the reply for the configured delay so the
+    // caller can exercise its client-side timeout / retry logic. Capped
+    // at 30s by validateResponseConfig.
+    if (Number.isInteger(cfg.delayMs) && cfg.delayMs > 0) {
+      await sleep(cfg.delayMs)
+    }
     return reply
       .code(cfg.status)
       .header('content-type', cfg.contentType)
@@ -179,7 +187,9 @@ async function captureHandler(request, reply) {
       }
       replyStatus  = fwd.status
       replyHeaders = fwd.headers
-      replyBody    = fwd.body
+      // Binary upstream bodies are relayed as raw bytes; the capture
+      // record keeps the `[binary N bytes]` placeholder (fwd.body).
+      replyBody    = fwd.isBinary && fwd.bodyBuffer ? fwd.bodyBuffer : fwd.body
     } else if (fwd.error === 'loop') {
       upstreamDto = {
         error:      'loop',
@@ -300,18 +310,29 @@ export default async function ingestRoute(fastify) {
     return payload.pipe(stream)
   })
 
-  // GET /i/:token → 405 guard. On the hosted API the inspector SPA is a
-  // separate origin, so a GET here is always a misdirected curl and 405 is
-  // right. In local `peekgrok` mode the SPA is served on the SAME origin,
-  // and its inspector route IS `/i/:token` — there we must NOT register
-  // this route so the GET falls through to the SPA fallback. The local
-  // entry sets `features.ingestGetGuard = false`; everywhere else the flag
-  // is absent and the guard stays on (default).
+  // GET /i/:token. On the hosted API the inspector SPA is a separate
+  // origin, so a GET here is never the SPA — it's either a real webhook
+  // that happens to use GET (OAuth callbacks, verification pings from
+  // Slack/Twilio, unsubscribe links) or a human who pasted the URL into
+  // a browser. We disambiguate on `Accept`: a browser navigation sends
+  // `Accept: text/html` and gets a 405 pointing at the inspector; any
+  // other client (curl, a webhook provider) is captured like the other
+  // methods.
+  //
+  // In local `peekgrok` mode the SPA IS served on this origin at
+  // `/i/:token`, so we must NOT register a GET route at all and let the
+  // request fall through to the SPA fallback. The local entry sets
+  // `features.ingestGetGuard = false`; everywhere else the flag is
+  // absent and this route stays on (default).
   if (fastify.features?.ingestGetGuard !== false) {
-    fastify.get('/i/:token', async (request, reply) => {
-      return reply.code(405).send({
-        error: 'Inbox ingest accepts POST/PUT/PATCH/DELETE only. GET is reserved for the inspector UI.',
-      })
+    fastify.get('/i/:token', { bodyLimit: BODY_LIMIT_BYTES }, async (request, reply) => {
+      const accept = request.headers['accept'] || ''
+      if (accept.includes('text/html')) {
+        return reply.code(405).send({
+          error: 'GET from a browser is reserved for the inspector UI. Non-browser GET requests (OAuth callbacks, verification pings) are captured.',
+        })
+      }
+      return captureHandler(request, reply)
     })
   }
 }

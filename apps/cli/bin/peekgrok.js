@@ -46,6 +46,8 @@ function usage() {
   console.error('                         (e.g. --to 8080  or  --to http://localhost:8080)')
   console.error('  --port <port>          inspector/API/MCP port (default 4041, local only)')
   console.error('  --proxy-port <port>    sniffer port ngrok tunnels (default 4042)')
+  console.error('  --ignore <p1,p2,...>   comma-separated path prefixes to forward but NOT')
+  console.error('                         capture (e.g. --ignore /health,/assets,/favicon.ico)')
   console.error('  --no-tunnel            skip ngrok, serve on localhost only')
   console.error('  --ngrok-url <domain>   use a reserved ngrok domain (e.g. rmorato.ngrok.app)')
   console.error('  --ngrok-region <r>     ngrok region (omit to honor ~/.config/ngrok/ngrok.yml)')
@@ -82,6 +84,10 @@ const freshInbox    = hasFlag('--fresh')
 // classic webhook-inbox mode (traffic terminates at /i/:token).
 const upstream = normalizeUpstream(flagValue(['--to', '--upstream']))
 const sniffer  = Boolean(upstream)
+const ignorePaths = (flagValue(['--ignore']) || '')
+  .split(',')
+  .map((s) => s.trim())
+  .filter(Boolean)
 const proxyPort = parseInt(flagValue(['--proxy-port'], String(DEFAULT_PROXY_PORT)), 10)
 if (sniffer && (!Number.isInteger(proxyPort) || proxyPort < 1 || proxyPort > 65535)) {
   console.error(`Invalid --proxy-port: ${flagValue(['--proxy-port'])} (expected 1-65535)`)
@@ -198,6 +204,11 @@ if (sniffer) {
       inboxRepo:           server.inboxRepo,
       capturedRequestRepo: server.capturedRequestRepo,
       ingestOrigin:        `http://localhost:${proxyPort}`,
+      ignorePaths,
+      // Let the tunneled proxy serve the share view (and its assets +
+      // public share API) from the local inspector, so a public share
+      // link resolves even though ngrok points at this proxy port.
+      inspectorBase:       `http://127.0.0.1:${port}`,
     })
   } catch (err) {
     console.error(`could not start sniffer proxy on :${proxyPort} — ${err.message}`)
@@ -219,6 +230,15 @@ if (!noTunnel) {
   }
 }
 
+// Point share links at the public tunnel so they're shareable (not
+// localhost). In webhook-inbox mode ngrok exposes the inspector directly;
+// in sniffer mode ngrok points at the proxy, which relays the inspector's
+// share paths (see startProxyServer `inspectorBase`). Without a tunnel the
+// share route falls back to the request host (localhost).
+if (tunnel && server.shareBase) {
+  server.shareBase.url = tunnel.url
+}
+
 // 5. Summary.
 const localBase    = `http://localhost:${port}`
 // Hand the MCP bearer token to the inspector SPA via the URL fragment
@@ -236,8 +256,12 @@ console.log(`  inspector: ${inspectorUrl}`)
 if (sniffer) {
   console.log(`  upstream:  ${upstream}   (all traffic is forwarded here)`)
   console.log(`  proxy:     http://localhost:${proxyPort}   (capture + forward)`)
+  if (ignorePaths.length > 0) {
+    console.log(`  ignoring:  ${ignorePaths.join(', ')}   (forwarded, not captured)`)
+  }
   if (tunnel) {
     console.log(`  public:    ${tunnel.url}   → sniffs → ${upstream}`)
+    console.log(`  share:     via ${tunnel.url}   (reserves /c, /assets, /api/requests)`)
   } else if (noTunnel) {
     console.log(`  tunnel:    (disabled — point clients at http://localhost:${proxyPort})`)
   }
@@ -246,6 +270,7 @@ if (sniffer) {
   console.log(`  webhook:   ${localBase}${webhookPath}`)
   if (tunnel) {
     console.log(`  public:    ${tunnel.url}${webhookPath}`)
+    console.log(`  share:     via ${tunnel.url}   (public /c/... links)`)
   } else if (noTunnel) {
     console.log('  tunnel:    (disabled via --no-tunnel)')
   }

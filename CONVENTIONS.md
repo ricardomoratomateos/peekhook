@@ -63,6 +63,14 @@ wrap validation failure in an `Outcome.INVALID` pattern (see
 ## Tests
 
 - **Framework**: Vitest. Run with `npm test` from `apps/api`.
+  - **Flaky under load**: the `WorkerThreadRunner` scripting-sandbox
+    tests assert a 200ms wall-clock timeout. Under full file
+    parallelism on a busy machine (or a loaded CI runner) worker
+    startup alone can blow that budget, so they fail intermittently
+    with `expected 'timeout' to be 'ok'`. It's a timing artifact, not
+    a logic bug. Run `npx vitest run --no-file-parallelism` (from
+    `apps/api`) for a deterministic green — each file gets the CPU to
+    itself. Use this in CI, or when a run fails only on WorkerThreadRunner.
 - **Domain + app unit tests**: pure JS, no Mongo. Use in-memory
   port fakes defined inline in the test file.
 - **Persistence integration tests**: `mongodb-memory-server`,

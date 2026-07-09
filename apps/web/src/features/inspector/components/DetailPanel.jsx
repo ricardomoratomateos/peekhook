@@ -81,10 +81,15 @@ function computeDrift(body, contentType, fields, createdAtMs) {
 
 export default function DetailPanel({ req, token }) {
   const [schemaFields, setSchemaFields] = useState([])
+  const [forwardTo, setForwardTo] = useState(null)
   const [replayState, setReplayState] = useState('idle')
   const [replayed, setReplayed] = useState(null)
   const [replayError, setReplayError] = useState(null)
   const [shareState, setShareState] = useState('idle')
+  const [editOpen, setEditOpen] = useState(false)
+  const [replayMode, setReplayMode] = useState('mock')
+  const [editMethod, setEditMethod] = useState('')
+  const [editBody, setEditBody] = useState('')
   const [curlState, copyCurl] = useCopy()
 
   useEffect(() => {
@@ -93,6 +98,9 @@ export default function DetailPanel({ req, token }) {
     api.getSchemaHistory(token)
       .then(d => { if (!cancelled) setSchemaFields(d?.fields || []) })
       .catch(() => { if (!cancelled) setSchemaFields([]) })
+    api.getInbox(token)
+      .then(d => { if (!cancelled) setForwardTo(d?.forwardTo || null) })
+      .catch(() => { if (!cancelled) setForwardTo(null) })
     return () => { cancelled = true }
   }, [token])
 
@@ -101,6 +109,10 @@ export default function DetailPanel({ req, token }) {
     setReplayed(null)
     setReplayError(null)
     setShareState('idle')
+    setEditOpen(false)
+    setReplayMode('mock')
+    setEditMethod(req?.method || '')
+    setEditBody(typeof req?.body === 'string' ? req.body : '')
   }, [req?.id])
 
   function buildCurl() {
@@ -127,19 +139,29 @@ export default function DetailPanel({ req, token }) {
   const headerRows = req.headers ? Object.entries(req.headers) : []
   const drift = computeDrift(req.body, req.contentType, schemaFields, new Date(req.createdAt).getTime())
 
-  async function handleReplay() {
+  async function handleReplay(opts = {}) {
     if (!req) return
+    const mode = opts.mode ?? 'mock'
+    // Build the mutation set only from fields the user actually changed,
+    // so an untouched "edit & replay" replays the capture verbatim.
+    let mutations = null
+    if (opts.withEdits) {
+      const m = {}
+      if (editMethod && editMethod !== req.method) m.method = editMethod
+      if (editBody !== (typeof req.body === 'string' ? req.body : '')) m.body = editBody
+      if (Object.keys(m).length > 0) mutations = m
+    }
     setReplayState('loading')
     setReplayed(null)
     setReplayError(null)
     try {
-      const res = await api.replayEvent(token, req.id)
+      const res = await api.replayEvent(token, req.id, { mode, mutations })
       setReplayState('done')
       setReplayed(res?.replayed || null)
       setTimeout(() => {
         setReplayState(s => s === 'done' ? 'idle' : s)
         setReplayed(null)
-      }, 3000)
+      }, 4000)
     } catch (err) {
       setReplayState('error')
       if (err.status === 429) {
@@ -150,7 +172,7 @@ export default function DetailPanel({ req, token }) {
       setTimeout(() => {
         setReplayState(s => s === 'error' ? 'idle' : s)
         setReplayError(null)
-      }, 3000)
+      }, 4000)
     }
   }
 
@@ -194,16 +216,27 @@ export default function DetailPanel({ req, token }) {
         <div style={headerRight}>
           <button
             type="button"
-            onClick={handleReplay}
+            onClick={() => handleReplay({ mode: 'mock' })}
             disabled={replayState === 'loading'}
             className="sb-replay"
             style={{ ...replayBtn, ...(replayState === 'loading' ? replayBtnDisabled : {}) }}
-            aria-label="Replay this request"
+            aria-label="Replay this request against the mock reply"
           >
             <span className="material-symbols-outlined" style={{ fontSize: '13px' }}>
               {replayState === 'loading' ? 'progress_activity' : 'replay'}
             </span>
             <span>{replayState === 'loading' ? 'replaying…' : 'replay'}</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setEditOpen(o => !o)}
+            className="sb-replay"
+            style={{ ...replayBtn, ...(editOpen ? replayBtnActive : {}) }}
+            aria-label="Edit and replay"
+            aria-pressed={editOpen}
+          >
+            <span className="material-symbols-outlined" style={{ fontSize: '13px' }}>tune</span>
+            <span>edit &amp; replay</span>
           </button>
           <button
             type="button"
@@ -241,6 +274,78 @@ export default function DetailPanel({ req, token }) {
           <span style={d.timestamp}>{new Date(req.createdAt).toISOString().replace('T', ' ').slice(0, 19)}</span>
         </div>
       </div>
+
+      {editOpen && (
+        <div style={editPanel}>
+          <div style={editModeRow}>
+            <span style={editLabel}>replay to</span>
+            <div style={editSegmented}>
+              <button
+                type="button"
+                onClick={() => setReplayMode('mock')}
+                style={{ ...editSegBtn, ...(replayMode === 'mock' ? editSegBtnOn : {}) }}
+              >
+                mock reply
+              </button>
+              <button
+                type="button"
+                onClick={() => forwardTo && setReplayMode('forward')}
+                disabled={!forwardTo}
+                title={forwardTo ? `forward to ${forwardTo}` : 'set a forward URL on the Reply tab first'}
+                style={{
+                  ...editSegBtn,
+                  ...(replayMode === 'forward' ? editSegBtnOn : {}),
+                  ...(!forwardTo ? { opacity: 0.45, cursor: 'not-allowed' } : {}),
+                }}
+              >
+                forward{forwardTo ? '' : ' (unset)'}
+              </button>
+            </div>
+          </div>
+          {replayMode === 'forward' && forwardTo && (
+            <div style={editHint}>sends to {forwardTo}</div>
+          )}
+          <div style={editFieldRow}>
+            <div style={{ ...editField, flex: '0 0 92px' }}>
+              <label style={editLabel}>method</label>
+              <input
+                value={editMethod}
+                onChange={e => setEditMethod(e.target.value.toUpperCase())}
+                spellCheck={false}
+                style={editInput}
+              />
+            </div>
+          </div>
+          <div style={editField}>
+            <label style={editLabel}>body</label>
+            <textarea
+              value={editBody}
+              onChange={e => setEditBody(e.target.value)}
+              spellCheck={false}
+              style={editTextarea}
+            />
+          </div>
+          <div style={editActions}>
+            <button
+              type="button"
+              onClick={() => handleReplay({ mode: replayMode, withEdits: true })}
+              disabled={replayState === 'loading'}
+              className="sb-accent"
+              style={editSendBtn}
+            >
+              {replayState === 'loading' ? 'replaying…' : `send replay → ${replayMode}`}
+            </button>
+            <button
+              type="button"
+              onClick={() => { setEditMethod(req.method || ''); setEditBody(typeof req.body === 'string' ? req.body : '') }}
+              disabled={replayState === 'loading'}
+              style={replayBtn}
+            >
+              reset edits
+            </button>
+          </div>
+        </div>
+      )}
 
       {(replayed || replayError) && (
         <div style={replayBannerRow}>
@@ -387,6 +492,65 @@ const shareBtn = replayBtn
 const replayBtnDisabled = {
   opacity: 0.55,
   cursor: 'not-allowed',
+}
+
+const replayBtnActive = {
+  borderColor: c.accent,
+  color: c.accent,
+}
+
+const editPanel = {
+  display: 'flex', flexDirection: 'column', gap: '10px',
+  padding: '12px 26px',
+  borderBottom: `1px solid ${c.borderSoft}`,
+  background: c.low,
+  flexShrink: 0,
+}
+
+const editModeRow = { display: 'flex', alignItems: 'center', gap: '10px' }
+
+const editSegmented = {
+  display: 'inline-flex', border: `1px solid ${c.border}`, borderRadius: '5px', overflow: 'hidden',
+}
+
+const editSegBtn = {
+  background: 'transparent', border: 'none', color: c.dim,
+  fontFamily: c.mono, fontSize: '11px', padding: '4px 10px', cursor: 'pointer',
+  letterSpacing: '0.03em',
+}
+
+const editSegBtnOn = { background: c.accent, color: c.accentInk }
+
+const editHint = {
+  fontFamily: c.mono, fontSize: '10px', color: c.faint, letterSpacing: '0.03em',
+}
+
+const editFieldRow = { display: 'flex', gap: '10px' }
+
+const editField = { display: 'flex', flexDirection: 'column', gap: '4px', flex: 1 }
+
+const editLabel = {
+  fontFamily: c.mono, fontSize: '10px', color: c.faint,
+  letterSpacing: '0.12em', textTransform: 'uppercase',
+}
+
+const editInput = {
+  background: c.lowest, border: `1px solid ${c.border}`, borderRadius: '4px',
+  color: c.fg, fontFamily: c.mono, fontSize: '12px', padding: '6px 8px',
+}
+
+const editTextarea = {
+  ...editInput,
+  minHeight: '90px', resize: 'vertical',
+  whiteSpace: 'pre', overflowWrap: 'normal', overflowX: 'auto',
+}
+
+const editActions = { display: 'flex', gap: '8px', alignItems: 'center' }
+
+const editSendBtn = {
+  background: c.accent, color: c.accentInk, border: 'none', borderRadius: '5px',
+  padding: '6px 12px', fontFamily: c.mono, fontSize: '11px', fontWeight: 600,
+  cursor: 'pointer', letterSpacing: '0.03em',
 }
 
 const replayBannerRow = {

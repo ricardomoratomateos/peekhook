@@ -89,9 +89,13 @@ describe('scripting integration', () => {
     expect(response.statusCode).toBe(500)
     expect(response.body).toBe(JSON.stringify({ error: 'script threw' }))
 
+    // A browser GET (Accept: text/html) is still rejected with 405 —
+    // used here as a cheap "server is still alive" probe after the
+    // script crash. (Non-browser GETs are now captured; see ingestRoute.)
     const after = await server.inject({
       method: 'GET',
       url:    '/i/' + inbox.token,
+      headers: { accept: 'text/html' },
     })
     expect(after.statusCode).toBe(405)
   })

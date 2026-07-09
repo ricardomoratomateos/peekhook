@@ -62,4 +62,17 @@ export class RequestListReadModel {
   async findLatest(inboxToken) {
     throw new Error('RequestListReadModel.findLatest not implemented')
   }
+
+  /**
+   * Return every capture for the inbox, newest first, for the export
+   * feature. Hard-capped at `limit` (default 1,000 — the inbox
+   * lifetime capture cap, so a single query covers a full inbox) so a
+   * caller cannot stream an unbounded result set.
+   *
+   * @param {{ inboxToken: string, limit?: number }} query
+   * @returns {Promise<object[]>} CapturedRequest DTOs, newest first
+   */
+  async listAll({ inboxToken, limit }) {
+    throw new Error('RequestListReadModel.listAll not implemented')
+  }
 }

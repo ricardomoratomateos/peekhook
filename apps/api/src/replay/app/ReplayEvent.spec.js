@@ -101,9 +101,10 @@ describe('ReplayEvent', () => {
     expect(result.retryAfterSec).toBe(42)
   })
 
-  it('rejects mockOnly=false with INVALID and a clear message', async () => {
+  it('rejects forward mode with INVALID when no forward target is configured', async () => {
     const inbox = {
       token: 'tok-1',
+      forwardTo: null,
       responseConfig: { enabled: true, status: 200, contentType: 'application/json', body: '{}' },
     }
     const limiter = fakeRateLimiter()
@@ -111,11 +112,12 @@ describe('ReplayEvent', () => {
       inboxes:     fakeInboxesByToken(inbox),
       requests:    fakeRequestsById(sampleRequest),
       rateLimiter: limiter,
+      forward:     async () => ({ ok: true, status: 200, contentType: 'application/json', body: 'x', durationMs: 1 }),
     })
 
-    const result = await sut.execute({ inboxToken: 'tok-1', eventId: 'evt-1', mockOnly: false })
+    const result = await sut.execute({ inboxToken: 'tok-1', eventId: 'evt-1', mode: 'forward' })
     expect(result.outcome).toBe(ReplayOutcome.INVALID)
-    expect(result.error).toMatch(/mockOnly must be true/)
+    expect(result.error).toMatch(/no forward target/)
     // Validation rejection must not consume a rate-limit token.
     expect(limiter.calls).toEqual([])
   })
@@ -238,5 +240,79 @@ describe('ReplayEvent', () => {
     // the route-layer can pair it with the X-Peek-Replay marker.
     expect(REPLAY_HEADER).toBe('X-Peek-Replay')
     expect(REPLAY_HEADER_VALUE).toBe('1')
+  })
+
+  it('forwards the captured request to the inbox forwardTo in forward mode', async () => {
+    const inbox = { token: 'tok-1', forwardTo: 'http://localhost:8080', responseConfig: null }
+    const forwardCalls = []
+    const sut = new ReplayEvent({
+      inboxes:     fakeInboxesByToken(inbox),
+      requests:    fakeRequestsById(sampleRequest),
+      rateLimiter: fakeRateLimiter(),
+      forward:     async (req) => { forwardCalls.push(req); return { ok: true, status: 202, contentType: 'application/json', body: '{"got":true}', durationMs: 12 } },
+    })
+
+    const result = await sut.execute({ inboxToken: 'tok-1', eventId: 'evt-1', mode: 'forward' })
+    expect(result.outcome).toBe(ReplayOutcome.REPLAYED)
+    const dto = result.target.toDto()
+    expect(dto.type).toBe('forward_url')
+    expect(dto.status).toBe(202)
+    expect(dto.body).toBe('{"got":true}')
+    expect(dto.durationMs).toBe(12)
+    expect(forwardCalls).toHaveLength(1)
+    expect(forwardCalls[0].targetUrl).toBe('http://localhost:8080')
+    expect(forwardCalls[0].method).toBe('POST')
+    expect(forwardCalls[0].body).toBe('{"hello":"world"}')
+  })
+
+  it('applies mutations on top of the captured request before forwarding', async () => {
+    const inbox = { token: 'tok-1', forwardTo: 'http://localhost:8080', responseConfig: null }
+    const forwardCalls = []
+    const sut = new ReplayEvent({
+      inboxes:     fakeInboxesByToken(inbox),
+      requests:    fakeRequestsById(sampleRequest),
+      rateLimiter: fakeRateLimiter(),
+      forward:     async (req) => { forwardCalls.push(req); return { ok: true, status: 200, contentType: 'application/json', body: 'ok', durationMs: 1 } },
+    })
+
+    const result = await sut.execute({
+      inboxToken: 'tok-1',
+      eventId:    'evt-1',
+      mode:       'forward',
+      mutations:  { method: 'put', body: '{"amount":9999}', headers: { 'x-test': 'yes' } },
+    })
+    expect(result.outcome).toBe(ReplayOutcome.REPLAYED)
+    expect(forwardCalls[0].method).toBe('PUT')            // uppercased
+    expect(forwardCalls[0].body).toBe('{"amount":9999}')  // overridden
+    expect(forwardCalls[0].headers['x-test']).toBe('yes') // merged onto captured headers
+    expect(forwardCalls[0].headers['content-type']).toBe('application/json') // captured header preserved
+  })
+
+  it('surfaces a forward timeout as a 504 forward_url target', async () => {
+    const inbox = { token: 'tok-1', forwardTo: 'http://localhost:8080', responseConfig: null }
+    const sut = new ReplayEvent({
+      inboxes:     fakeInboxesByToken(inbox),
+      requests:    fakeRequestsById(sampleRequest),
+      rateLimiter: fakeRateLimiter(),
+      forward:     async () => ({ ok: false, error: 'timeout', message: 'timeout after 10000ms', durationMs: 10000 }),
+    })
+
+    const result = await sut.execute({ inboxToken: 'tok-1', eventId: 'evt-1', mode: 'forward' })
+    expect(result.outcome).toBe(ReplayOutcome.REPLAYED)
+    const dto = result.target.toDto()
+    expect(dto.status).toBe(504)
+    expect(dto.error).toBe('timeout')
+  })
+
+  it('rejects malformed mutations with INVALID', async () => {
+    const inbox = { token: 'tok-1', forwardTo: null, responseConfig: null }
+    const sut = new ReplayEvent({
+      inboxes:     fakeInboxesByToken(inbox),
+      requests:    fakeRequestsById(sampleRequest),
+      rateLimiter: fakeRateLimiter(),
+    })
+    const result = await sut.execute({ inboxToken: 'tok-1', eventId: 'evt-1', mutations: { method: 123 } })
+    expect(result.outcome).toBe(ReplayOutcome.INVALID)
+    expect(result.error).toMatch(/mutations\.method/)
   })
 })

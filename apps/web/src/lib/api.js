@@ -70,11 +70,28 @@ export const api = {
   sendFixture: (token, fixtureId) =>
     request(`/api/inboxes/${token}/fixtures/${fixtureId}`, { method: 'POST', body: '{}' }),
 
-  replayEvent: (token, eventId) =>
+  replayEvent: (token, eventId, { mode = 'mock', mutations = null } = {}) =>
     request(`/api/inboxes/${token}/replay`, {
       method: 'POST',
-      body: JSON.stringify({ eventId, mockOnly: true }),
+      body: JSON.stringify({ eventId, mode, mutations }),
     }),
+
+  // Delete captures. Pass a non-empty `ids` array to delete only those;
+  // omit it to clear the whole inbox (and reset its capture cap).
+  clearRequests: (token, ids) =>
+    request(`/api/inboxes/${token}/requests`, {
+      method: 'DELETE',
+      body: Array.isArray(ids) && ids.length > 0 ? JSON.stringify({ ids }) : undefined,
+    }),
+
+  // Download URL for the export. Pass `ids` to export only the selection.
+  exportUrl: (token, ids) => {
+    const base = `/api/inboxes/${token}/export`
+    if (Array.isArray(ids) && ids.length > 0) {
+      return `${base}?ids=${ids.map(encodeURIComponent).join(',')}`
+    }
+    return base
+  },
 
   shareRequest: (token, id) =>
     request(`/api/inboxes/${token}/requests/${id}/share`, {

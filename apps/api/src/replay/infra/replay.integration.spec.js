@@ -137,18 +137,73 @@ describe('replay integration (Fastify inject + memory Mongo)', () => {
     }
   })
 
-  it('returns 400 when mockOnly=false', async () => {
+  it('returns 400 when forward mode is requested with no forward target', async () => {
     const { fastify, inbox, eventId } = await buildServer()
     try {
       const response = await fastify.inject({
         method:  'POST',
         url:     `/api/inboxes/${inbox.token}/replay`,
         headers: { 'content-type': 'application/json' },
-        payload:  JSON.stringify({ eventId, mockOnly: false }),
+        payload:  JSON.stringify({ eventId, mode: 'forward' }),
       })
       expect(response.statusCode).toBe(400)
       const body = JSON.parse(response.body)
-      expect(body.error).toMatch(/mockOnly must be true/)
+      expect(body.error).toMatch(/no forward target/)
+    } finally {
+      await fastify.close()
+    }
+  })
+
+  it('replays to the configured forwardTo in forward mode and returns the upstream response', async () => {
+    const inboxes   = new MongoInboxRepository(db)
+    const readModel = new MongoRequestListReadModel(db)
+    const captured  = new MongoCapturedRequestRepository(db)
+
+    const inbox = SandboxInbox.create()
+    await inboxes.insert(inbox)
+    await inboxes.updateForwardTo(inbox.token, 'http://localhost:9099/hook')
+
+    const id = captured.nextId()
+    await captured.insert(CapturedRequest.create({
+      id,
+      inboxToken:  inbox.token,
+      method:      'POST',
+      path:        '/i/' + inbox.token,
+      query:       {},
+      headers:     { 'content-type': 'application/json' },
+      body:        '{"amount":42}',
+      contentType: 'application/json',
+      size:        13,
+      ip:          '127.0.0.1',
+      now:         new Date(),
+      expiresAt:   inbox.expiresAt,
+    }))
+
+    const forwardCalls = []
+    const replayEvent = new ReplayEvent({
+      inboxes,
+      requests:    readModel,
+      rateLimiter: new InMemoryReplayRateLimiter(),
+      forward:     async (req) => { forwardCalls.push(req); return { ok: true, status: 200, contentType: 'application/json', body: '{"upstream":"ok"}', durationMs: 5 } },
+    })
+
+    const fastify = Fastify({ logger: false })
+    await fastify.register(registerReplayRoutes, { replayEvent })
+    await fastify.ready()
+    try {
+      const response = await fastify.inject({
+        method:  'POST',
+        url:     `/api/inboxes/${inbox.token}/replay`,
+        headers: { 'content-type': 'application/json' },
+        payload:  JSON.stringify({ eventId: id.toString(), mode: 'forward', mutations: { body: '{"amount":100}' } }),
+      })
+      expect(response.statusCode).toBe(200)
+      const body = JSON.parse(response.body)
+      expect(body.replayed.type).toBe('forward_url')
+      expect(body.replayed.status).toBe(200)
+      expect(body.replayed.body).toBe('{"upstream":"ok"}')
+      expect(forwardCalls[0].targetUrl).toBe('http://localhost:9099/hook')
+      expect(forwardCalls[0].body).toBe('{"amount":100}')
     } finally {
       await fastify.close()
     }

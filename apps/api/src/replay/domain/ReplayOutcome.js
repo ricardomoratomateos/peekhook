@@ -3,15 +3,18 @@
  *
  *   REPLAYED    — replay produced a target; transport replies 200
  *   NOT_FOUND   — inbox or event not found; transport replies 404
- *   INVALID     — bad input (mockOnly!=true, missing eventId) or
- *                 unsupported replay mode; transport replies 400
+ *   INVALID     — bad input (missing eventId, malformed mutations) or
+ *                 forward mode requested with no forwardTo configured;
+ *                 transport replies 400
  *   RATE_LIMITED — token bucket rejected; transport replies 429
  *
- * External-URL replay is intentionally absent at this MVP. The
- * mode requires inbox claim (auth), which lands in a separate
- * roadmap item. A non-mockOnly input is rejected with INVALID so
- * we never expose a code path that forwards an inbound payload to
- * the open internet from an anonymous sandbox.
+ * Two replay modes are supported: `mock` (the default — replay the
+ * inbox's own in-process reply) and `forward` (re-send the captured
+ * request to the inbox's already-configured forwardTo). Forward mode
+ * does NOT accept an arbitrary URL from the caller; it reuses the
+ * pre-validated, loop-checked forwardTo that already receives the
+ * inbox's live traffic, so it needs no inbox-claim gate. Arbitrary
+ * external-URL replay remains unsupported.
  */
 export const ReplayOutcome = Object.freeze({
   REPLAYED:     'replayed',

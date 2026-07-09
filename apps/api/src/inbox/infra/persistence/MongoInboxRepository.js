@@ -44,6 +44,13 @@ export class MongoInboxRepository extends InboxRepository {
     )
   }
 
+  async resetCaptureCount(token) {
+    await this.col.updateOne(
+      { token },
+      { $set: { captureCount: 0, rateWindow: { startedAt: null, count: 0 } } },
+    )
+  }
+
   async tryConsumeCaptureSlot(token, now) {
     const doc = await this.findByToken(token)
     if (!doc) return { ok: false, inbox: null, reason: 'inbox_not_found' }

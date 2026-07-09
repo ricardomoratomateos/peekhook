@@ -1,12 +1,30 @@
 import { getDb } from '../../shared/db.js'
+import { config } from '../../config.js'
 import { MongoInboxRepository }    from '../../inbox/infra/persistence/MongoInboxRepository.js'
 import { MongoRequestListReadModel } from '../../inbox/infra/persistence/MongoRequestListReadModel.js'
+import { ForwardRequest } from '../../inbox/infra/ForwardRequest.js'
 import { runScript } from '../../scripting/index.js'
 import { ReplayEvent } from '../app/ReplayEvent.js'
 import { ReplayOutcome, REPLAY_HEADER, REPLAY_HEADER_VALUE } from '../domain/ReplayOutcome.js'
 import { InMemoryReplayRateLimiter } from './InMemoryReplayRateLimiter.js'
 
 let singletonRateLimiter
+
+/**
+ * The forward port for forward-mode replay. Re-sends the (mutated)
+ * captured request to the inbox's configured `forwardTo` through the
+ * same `ForwardRequest` adapter the live forward feature uses, so the
+ * loop guard and hop-by-hop stripping behave identically.
+ */
+export function replayForward({ targetUrl, method, headers, body }) {
+  return new ForwardRequest({
+    targetUrl,
+    method,
+    headers,
+    body,
+    ingestOrigin: config.ingestUrl,
+  }).execute()
+}
 
 /**
  * Shared process-wide rate limiter. Module-level so a single
@@ -28,6 +46,7 @@ function makeReplayer(fastify) {
     requests:    readModel,
     rateLimiter: getRateLimiter(),
     runScript,
+    forward:     replayForward,
   })
 }
 
@@ -60,6 +79,7 @@ export async function registerReplayRoutes(fastify, opts = {}) {
             requests:    opts.requestReadModel ?? new MongoRequestListReadModel(db),
             rateLimiter: opts.replayRateLimiter,
             runScript,
+            forward:     replayForward,
           })
         })()
       : makeReplayer(fastify))
@@ -71,16 +91,17 @@ export async function registerReplayRoutes(fastify, opts = {}) {
     if (typeof body.eventId !== 'string' || body.eventId.length === 0) {
       return reply.code(400).send({ error: 'eventId required' })
     }
-    if (body.mockOnly !== true) {
-      return reply.code(400).send({
-        error: 'mockOnly must be true: external URL replay is gated on inbox claim',
-      })
-    }
+
+    // Mode selection: `mode: 'forward'` re-sends to the inbox's
+    // configured forwardTo; anything else (including the legacy
+    // `mockOnly: true`) replays the mock reply.
+    const mode = body.mode === 'forward' ? 'forward' : 'mock'
 
     const result = await replayEvent.execute({
       inboxToken: token,
       eventId:    body.eventId,
-      mockOnly:   true,
+      mode,
+      mutations:  body.mutations ?? null,
     })
 
     if (result.outcome === ReplayOutcome.RATE_LIMITED) {

@@ -185,6 +185,18 @@ export class SqliteInboxRepository extends InboxRepository {
       .run(forwardTo, token)
   }
 
+  async resetCaptureCount(token) {
+    this.db
+      .query(`
+        UPDATE inboxes
+        SET capture_count = 0,
+            rate_window_started_at = NULL,
+            rate_window_count = 0
+        WHERE token = ?
+      `)
+      .run(token)
+  }
+
   async tryConsumeCaptureSlot(token, now) {
     return this.db.transaction(() => {
       const row = this.db

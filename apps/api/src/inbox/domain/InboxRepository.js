@@ -81,4 +81,17 @@ export class InboxRepository {
   async tryConsumeCaptureSlot(token, now) {
     throw new Error('InboxRepository.tryConsumeCaptureSlot not implemented')
   }
+
+  /**
+   * Reset the lifetime capture counter and the sliding rate window to
+   * zero. Called when the user clears an inbox's captures so the
+   * 1,000-cap frees up again on the same token. No-op if the token
+   * does not resolve.
+   *
+   * @param {string} token
+   * @returns {Promise<void>}
+   */
+  async resetCaptureCount(token) {
+    throw new Error('InboxRepository.resetCaptureCount not implemented')
+  }
 }

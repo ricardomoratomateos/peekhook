@@ -46,4 +46,31 @@ export class CapturedRequestRepository {
   async upsertShareId(id, inboxToken) {
     throw new Error('CapturedRequestRepository.upsertShareId not implemented')
   }
+
+  /**
+   * Delete every captured request for an inbox. Used by the "clear
+   * inbox" action so a user who filled their 1,000-capture cap can
+   * keep the same webhook URL instead of minting a new inbox. Scoped
+   * by inboxToken so a caller can only purge their own captures.
+   *
+   * @param {string} inboxToken
+   * @returns {Promise<number>} number of captures deleted
+   */
+  async deleteByInboxToken(inboxToken) {
+    throw new Error('CapturedRequestRepository.deleteByInboxToken not implemented')
+  }
+
+  /**
+   * Delete a specific set of captures within an inbox. Scoped by
+   * inboxToken so a caller can only delete their own captures; ids that
+   * don't belong to the inbox (or are malformed) are ignored. Used by
+   * the selective "delete selected" action in the inspector.
+   *
+   * @param {string} inboxToken
+   * @param {string[]} ids
+   * @returns {Promise<number>} number of captures actually deleted
+   */
+  async deleteByIds(inboxToken, ids) {
+    throw new Error('CapturedRequestRepository.deleteByIds not implemented')
+  }
 }

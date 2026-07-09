@@ -2,9 +2,19 @@ import crypto from 'node:crypto'
 
 const INBOX_TTL_MS = 7 * 24 * 60 * 60 * 1000
 
-const DEFAULT_RESPONSE = { enabled: false, status: 200, contentType: 'application/json', body: '' }
+const DEFAULT_RESPONSE = { enabled: false, status: 200, contentType: 'application/json', body: '', delayMs: 0 }
 const SCRIPT_MAX_BYTES = 8 * 1024
 const FORWARD_URL_MAX_BYTES = 2048
+
+/**
+ * Upper bound on the artificial delay a mock reply may hold before it
+ * responds. Lets a sandbox user simulate a slow / timing-out upstream
+ * to exercise their client's timeout + retry logic. Capped at 30s so a
+ * misconfigured inbox can't pin a request handler open indefinitely —
+ * 30s is already past every default HTTP client timeout, so it covers
+ * the "upstream never answers in time" case without a true hang.
+ */
+export const MAX_MOCK_DELAY_MS = 30_000
 
 /**
  * Hard caps enforced on the *configured* mock-reply body. ROADMAP
@@ -109,6 +119,12 @@ export function validateResponseConfig(cfg) {
   if (typeof cfg.body !== 'string') throw new Error('responseConfig.body must be a string')
   if (Buffer.byteLength(cfg.body, 'utf8') > MOCK_BODY_MAX_BYTES) {
     throw new Error(`responseConfig.body exceeds ${MOCK_BODY_MAX_BYTES} byte limit`)
+  }
+
+  if (cfg.delayMs !== undefined && cfg.delayMs !== null) {
+    if (!Number.isInteger(cfg.delayMs) || cfg.delayMs < 0 || cfg.delayMs > MAX_MOCK_DELAY_MS) {
+      throw new Error(`responseConfig.delayMs must be an integer 0–${MAX_MOCK_DELAY_MS}`)
+    }
   }
 
   if (cfg.scriptEnabled !== undefined && typeof cfg.scriptEnabled !== 'boolean') {

@@ -2,7 +2,7 @@ import { c } from '../lib/tokens.js'
 import { timeAgo, prettyPath } from '../lib/format.js'
 import MethodChip from './MethodChip.jsx'
 
-export default function RequestRow({ req, token, selected, isNew, compareSelected, onClick, onToggleCompare }) {
+export default function RequestRow({ req, token, selected, isNew, checked, onClick, onToggleSelect }) {
   return (
     <div
       onClick={onClick}
@@ -27,20 +27,20 @@ export default function RequestRow({ req, token, selected, isNew, compareSelecte
         type="button"
         onClick={(e) => {
           e.stopPropagation()
-          onToggleCompare?.(req)
+          onToggleSelect?.(req)
         }}
-        aria-label={compareSelected ? 'remove from compare' : 'add to compare'}
-        aria-pressed={!!compareSelected}
+        aria-label={checked ? 'deselect request' : 'select request'}
+        aria-pressed={!!checked}
         style={{
           display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
           width: '18px', height: '18px', padding: 0, flexShrink: 0,
           background: 'transparent', border: 'none', cursor: 'pointer',
-          color: compareSelected ? c.accent : c.faint,
+          color: checked ? c.accent : c.faint,
           transition: 'color .12s',
         }}
       >
         <span className="material-symbols-outlined" style={{ fontSize: '16px', lineHeight: 1 }}>
-          {compareSelected ? 'check_box' : 'check_box_outline_blank'}
+          {checked ? 'check_box' : 'check_box_outline_blank'}
         </span>
       </button>
       <MethodChip method={req.method} />

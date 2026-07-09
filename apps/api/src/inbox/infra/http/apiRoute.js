@@ -6,6 +6,8 @@ import { ListRequests } from '../../app/ListRequests.js'
 import { GetRequest } from '../../app/GetRequest.js'
 import { ConfigureResponse } from '../../app/ConfigureResponse.js'
 import { ConfigureForward } from '../../app/ConfigureForward.js'
+import { ClearInbox } from '../../app/ClearInbox.js'
+import { ExportEvents } from '../../app/ExportEvents.js'
 import { GetSchemaHistory } from '../../../schema-history/app/GetSchemaHistory.js'
 import { MongoInboxRepository } from '../persistence/MongoInboxRepository.js'
 import { MongoCapturedRequestRepository } from '../persistence/MongoCapturedRequestRepository.js'
@@ -192,6 +194,53 @@ export default async function apiRoute(fastify) {
     return reply.send(results)
   })
 
+  // Export every capture in the inbox as a downloadable JSON document.
+  // Placed before the `:id` route so `/export` is matched as a literal
+  // segment rather than treated as an event id.
+  fastify.get('/api/inboxes/:token/export', async (request, reply) => {
+    const { token } = request.params
+    // Optional `?ids=a,b,c` exports only the selected captures.
+    const ids = typeof request.query?.ids === 'string' && request.query.ids.length > 0
+      ? request.query.ids.split(',').map((s) => s.trim()).filter(Boolean)
+      : null
+    const { inboxRepo, readModel } = resolveDeps(fastify)
+    const exportEvents = new ExportEvents({ inboxes: inboxRepo, requests: readModel })
+    const result = await exportEvents.execute({ token, ids })
+    if (!result) return reply.code(404).send({ error: 'Inbox not found' })
+
+    const filename = `peekhook-${token}-export.json`
+    return reply
+      .header('content-type', 'application/json; charset=utf-8')
+      .header('content-disposition', `attachment; filename="${filename}"`)
+      .send(result)
+  })
+
+  // Delete captures for the inbox. With a non-empty `{ ids }` body, only
+  // those captures are removed (the inspector's "delete selected"). With
+  // no ids, the whole inbox is cleared AND its lifetime cap reset, so the
+  // same webhook URL keeps working. Distinct from DELETE /response (which
+  // clears the mock reply) — this clears captured history.
+  fastify.delete('/api/inboxes/:token/requests', async (request, reply) => {
+    const { token } = request.params
+    const body = request.body ?? {}
+    const ids = Array.isArray(body.ids) ? body.ids.filter((id) => typeof id === 'string') : []
+
+    const { inboxRepo } = resolveDeps(fastify)
+    const capturedRepo = fastify.capturedRequestRepo ?? new MongoCapturedRequestRepository(getDb())
+
+    if (ids.length > 0) {
+      const inbox = await inboxRepo.findByToken(token)
+      if (!inbox) return reply.code(404).send({ error: 'Inbox not found' })
+      const deleted = await capturedRepo.deleteByIds(token, ids)
+      return reply.send({ token, deleted })
+    }
+
+    const clearInbox = new ClearInbox({ inboxes: inboxRepo, requests: capturedRepo })
+    const result = await clearInbox.execute({ token })
+    if (result.outcome === Outcome.NOT_FOUND) return reply.code(404).send({ error: 'Inbox not found' })
+    return reply.send({ token, deleted: result.deleted })
+  })
+
   fastify.get('/api/inboxes/:token/requests/:id', async (request, reply) => {
     const { token, id } = request.params
     if (!isObjectIdShape(id)) return reply.code(400).send({ error: 'Invalid id' })
@@ -230,7 +279,17 @@ export default async function apiRoute(fastify) {
       const shareId = await capturedRepo.upsertShareId(id, token)
       if (!shareId) return reply.code(404).send({ error: 'Request not found' })
 
-      const host = `${request.protocol}://${request.headers.host}`
+      // Prefer an explicitly configured public base over the request's
+      // Host header. The hosted target leaves `shareBase` unset, so it
+      // uses the incoming host (e.g. peekhook.0311b.com). The local
+      // `peekgrok` target sets it to the public ngrok URL once the tunnel
+      // is up, so a shared link is something you can hand to a teammate —
+      // not `localhost:4041`. `shareBase` is a mutable holder because the
+      // tunnel connects after the server starts listening.
+      const configuredBase = fastify.shareBase?.url
+      const host = configuredBase
+        ? configuredBase.replace(/\/+$/, '')
+        : `${request.protocol}://${request.headers.host}`
       const shareUrl = `${host}/c/${shareId}?token=${token}`
       return reply.send({ shareUrl, shareId })
     })

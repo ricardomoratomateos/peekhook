@@ -104,4 +104,14 @@ export class MongoRequestListReadModel extends RequestListReadModel {
       .findOne({ inboxToken }, { sort: { _id: -1 } })
     return doc ? toDto(doc) : null
   }
+
+  async listAll({ inboxToken, limit = 1000 }) {
+    const cap = Math.min(Number(limit) || 1000, 1000)
+    const docs = await this.col
+      .find({ inboxToken })
+      .sort({ _id: -1 })
+      .limit(cap)
+      .toArray()
+    return docs.map(toDto)
+  }
 }

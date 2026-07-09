@@ -81,6 +81,9 @@ export class SqliteRequestListReadModel extends RequestListReadModel {
       findLatest: db.prepare(
         'SELECT * FROM requests WHERE inbox_token = ? ORDER BY id DESC LIMIT 1',
       ),
+      listAll: db.prepare(
+        'SELECT * FROM requests WHERE inbox_token = ? ORDER BY id DESC LIMIT ?',
+      ),
     }
   }
 
@@ -138,6 +141,12 @@ export class SqliteRequestListReadModel extends RequestListReadModel {
   async findLatest(inboxToken) {
     const row = this.stmt.findLatest.get(inboxToken)
     return row ? toDto(row) : null
+  }
+
+  async listAll({ inboxToken, limit = 1000 }) {
+    const cap = Math.min(Number(limit) || 1000, 1000)
+    const rows = this.stmt.listAll.all(inboxToken, cap)
+    return rows.map(toDto)
   }
 }
 

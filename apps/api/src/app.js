@@ -10,7 +10,7 @@ import ingestRoute from './inbox/infra/http/ingestRoute.js'
 import apiRoute from './inbox/infra/http/apiRoute.js'
 import { registerSearchRoutes } from './search/infra/search.http.js'
 import registerFixtureRoutes from './fixtures/infra/fixtures.http.js'
-import { registerReplayRoutes } from './replay/infra/replay.http.js'
+import { registerReplayRoutes, replayForward } from './replay/infra/replay.http.js'
 import { registerMcpRoutes } from './mcp/infra/mcp.http.js'
 import { InMemoryMcpRateLimiter } from './mcp/infra/InMemoryMcpRateLimiter.js'
 import { MongoRequestListReadModel } from './inbox/infra/persistence/MongoRequestListReadModel.js'
@@ -88,6 +88,14 @@ export async function buildApp(deps, options = {}) {
 
   app.decorate('features', options)
 
+  // Mutable holder for the public base used to build share URLs. The
+  // hosted target leaves it null (the share route falls back to the
+  // request Host header). The local `peekgrok` target sets `.url` to the
+  // public ngrok URL once the tunnel connects (after listen), so shared
+  // links point at the tunnel, not localhost. A holder (not a plain
+  // string) so that late assignment is visible to the already-built route.
+  app.decorate('shareBase', { url: options.shareBaseUrl ?? null })
+
   await app.register(fastifyCors, {
     origin: process.env.WEB_URL || 'http://localhost:5173',
     credentials: true,
@@ -114,6 +122,7 @@ export async function buildApp(deps, options = {}) {
         requests:    deps.requestReadModel,
         rateLimiter: deps.replayRateLimiter,
         runScript,
+        forward:     replayForward,
       })
     : null
 

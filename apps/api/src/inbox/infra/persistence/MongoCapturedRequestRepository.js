@@ -56,4 +56,18 @@ export class MongoCapturedRequestRepository extends CapturedRequestRepository {
     )
     return fresh?.shareId ?? shareId
   }
+
+  async deleteByInboxToken(inboxToken) {
+    const res = await this.col.deleteMany({ inboxToken })
+    return res.deletedCount ?? 0
+  }
+
+  async deleteByIds(inboxToken, ids) {
+    const objectIds = (Array.isArray(ids) ? ids : [])
+      .filter((id) => ObjectId.isValid(id))
+      .map((id) => new ObjectId(id))
+    if (objectIds.length === 0) return 0
+    const res = await this.col.deleteMany({ inboxToken, _id: { $in: objectIds } })
+    return res.deletedCount ?? 0
+  }
 }

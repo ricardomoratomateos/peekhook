@@ -315,6 +315,49 @@ the rationale + effort remain as historical record.
 
 ## Update log
 
+- **v1.3**: usability batch aimed at the daily debug loop —
+  turns PeekHook from "look at webhooks" into "iterate on them."
+  Seven features, all backend + frontend + tests:
+  1. **Replay to forward target** — `POST /replay` gained
+     `mode: 'forward'`, re-sending a captured event to the inbox's
+     already-configured `forwardTo` (reuses `ForwardRequest`; safe
+     without inbox-claim because the target is the pre-validated,
+     loop-checked URL that already takes live traffic, not an
+     arbitrary caller-supplied one).
+  2. **Edit-and-replay** — `mutations: { method, path, headers, body }`
+     overlaid on the capture before mock/forward, surfaced as an
+     "edit & replay" panel in the DetailPanel.
+  3. **Mock-reply delay** — `responseConfig.delayMs` (0–30s) holds
+     the reply to simulate a slow / timing-out upstream. Honored by
+     both the hosted ingest and the peekgrok sniffer.
+  4. **GET capture** — `/i/:token` now captures non-browser GET
+     (OAuth callbacks, verification pings); a browser navigation
+     (`Accept: text/html`) still 405s. Local SPA mode unaffected
+     (the GET route isn't registered there).
+  5. **Export** — `GET /api/inboxes/:token/export` returns captures
+     as a downloadable JSON document; `?ids=` exports only a
+     selection.
+  6. **Clear / delete** — `DELETE /api/inboxes/:token/requests` with
+     no body clears the whole inbox and resets the 1,000-cap; with
+     `{ ids }` it deletes just those (new repo methods on Mongo +
+     SQLite). The inspector row checkbox became a general multi-select
+     (diff now = "select exactly 2"), with a select-all toggle and a
+     selection action bar (export / delete selected).
+  7. **Binary-safe sniffer + noise filter** — `ForwardRequest`
+     reads binary upstream responses as bytes (not mangled UTF-8)
+     and omits the body on GET/HEAD; `peekgrok --ignore <prefixes>`
+     forwards but skips capturing health/asset noise.
+  Plus **shareable links from peekgrok**: the share route builds
+  `/c/<id>` against a configured public base (mutable `shareBase`
+  holder on the app), which the CLI sets to the ngrok URL once the
+  tunnel connects — no more `localhost` links. In sniffer mode the
+  proxy reserves `/c`, `/assets`, `/api/requests` and relays them to
+  the local inspector so the public link resolves. Hosted target
+  leaves `shareBase` null and uses the request Host header.
+  340 / 340 backend tests across 39 files (Node/vitest) + the
+  bun:sqlite / proxy integration tests (`apps/api/tests`,
+  `apps/cli/tests`). NL-parser-v2 and the schema sparkline remain
+  the next polish items.
 - **v1.2**: local-first `peekgrok` CLI. New `apps/cli` package
   (`@peekhook/cli`, Bun runtime) ships a single self-contained
   binary that runs the whole stack — capture, inspector UI, SSE,

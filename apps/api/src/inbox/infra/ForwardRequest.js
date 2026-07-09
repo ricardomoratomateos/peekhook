@@ -78,25 +78,56 @@ export class ForwardRequest {
       host: target.host,
     })
 
-    try {
-      const res = await this.fetchImpl(target, {
-        method:  this.method,
-        headers: fwdHeaders,
-        body:    this.body ?? '',
-        signal:  ac.signal,
-        redirect: 'manual',
-      })
+    // GET/HEAD requests must not carry a body — undici (Node's fetch)
+    // throws "Request with GET/HEAD method cannot have body" otherwise.
+    // The sniffer forwards every method, so this guard is load-bearing
+    // once GET traffic flows through.
+    const method = (this.method || 'GET').toUpperCase()
+    const init = {
+      method,
+      headers:  fwdHeaders,
+      signal:   ac.signal,
+      redirect: 'manual',
+    }
+    if (method !== 'GET' && method !== 'HEAD') {
+      init.body = this.body ?? ''
+    }
 
-      const resBody = await res.text()
+    try {
+      const res = await this.fetchImpl(target, init)
+
+      const contentType = res.headers.get('content-type') ?? ''
       const resHeaders = stripHopByHopHeaders(Object.fromEntries(res.headers.entries()))
 
+      // Text-shaped responses (JSON / XML / HTML / plain / form / svg)
+      // are read as UTF-8 strings so they display and store cleanly.
+      // Everything else (images, fonts, protobuf, octet-stream) is read
+      // as raw bytes and relayed verbatim — reading binary as UTF-8
+      // mangles it. `body` stays a short placeholder for the capture
+      // record; `bodyBuffer` carries the exact bytes for the relay.
+      if (isTextual(contentType)) {
+        const resBody = await res.text()
+        return {
+          ok: true,
+          status:      res.status,
+          headers:     resHeaders,
+          body:        resBody,
+          contentType,
+          durationMs:  this.now() - start,
+          isBinary:    false,
+        }
+      }
+
+      const buf = Buffer.from(await res.arrayBuffer())
       return {
         ok: true,
         status:      res.status,
         headers:     resHeaders,
-        body:        resBody,
-        contentType: res.headers.get('content-type') ?? '',
+        body:        `[binary ${buf.length} bytes]`,
+        bodyBuffer:  buf,
+        contentType,
         durationMs:  this.now() - start,
+        isBinary:    true,
       }
     } catch (err) {
       const durationMs = this.now() - start
@@ -118,6 +149,26 @@ export class ForwardRequest {
   #isLoop(target) {
     return !checkForwardLoop(target.toString(), this.ingestOrigin).ok
   }
+}
+
+/**
+ * Whether a content-type is text-shaped (safe to read as UTF-8) vs
+ * binary. An empty content-type is treated as textual — that's the
+ * common case for tiny JSON/text webhook acks that omit the header,
+ * and treating them as binary would swap their body for a placeholder.
+ */
+function isTextual(contentType) {
+  if (!contentType) return true
+  const ct = contentType.toLowerCase()
+  return (
+    ct.startsWith('text/') ||
+    ct.includes('json') ||
+    ct.includes('xml') ||
+    ct.includes('javascript') ||
+    ct.includes('x-www-form-urlencoded') ||
+    ct.includes('csv') ||
+    ct.includes('yaml')
+  )
 }
 
 const HOP_BY_HOP = new Set([
