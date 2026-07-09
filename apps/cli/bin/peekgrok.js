@@ -284,10 +284,17 @@ console.log('Press Ctrl+C to stop')
 for (const sig of ['SIGINT', 'SIGTERM']) {
   process.once(sig, async () => {
     console.log('\nShutting down...')
-    if (proxy) await proxy.close()
-    await server.close()
-    if (tunnel) tunnel.close()
-    db.close()
-    process.exit(0)
+    // Belt-and-suspenders: never let a stuck close() hang the terminal.
+    const hardExit = setTimeout(() => process.exit(0), 3000)
+    hardExit.unref?.()
+    try {
+      if (proxy) await proxy.close()
+      await server.close()
+      if (tunnel) tunnel.close()
+      db.close()
+    } finally {
+      clearTimeout(hardExit)
+      process.exit(0)
+    }
   })
 }

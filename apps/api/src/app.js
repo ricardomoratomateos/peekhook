@@ -72,6 +72,10 @@ export async function buildApp(deps, options = {}) {
   const app = Fastify({
     logger: { level: config.isProd ? 'warn' : 'info' },
     trustProxy: config.trustProxy,
+    // Destroy lingering sockets on close() instead of waiting for them to
+    // drain — the SSE stream (/stream) never closes on its own, so without
+    // this a Ctrl+C hangs forever on "Shutting down...".
+    forceCloseConnections: true,
   })
 
   if (deps.inboxRepo)           app.decorate('inboxRepo',          deps.inboxRepo)

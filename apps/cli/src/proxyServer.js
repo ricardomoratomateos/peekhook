@@ -103,7 +103,7 @@ export async function startProxyServer({
     enforceLimits: false,
   })
 
-  const app = Fastify({ logger, bodyLimit: BODY_LIMIT_BYTES })
+  const app = Fastify({ logger, bodyLimit: BODY_LIMIT_BYTES, forceCloseConnections: true })
 
   // Capture the raw body byte-for-byte for every content type so we can
   // both record it and replay it upstream unchanged.
