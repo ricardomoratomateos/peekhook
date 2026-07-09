@@ -1,6 +1,6 @@
 # Roadmap
 
-PeekHook is a free, anonymous webhook inspector. Public,
+peekhook is a free, anonymous webhook inspector. Public,
 ephemeral, zero signup. The bet: developers want to look at
 webhooks fast without configuring anything, and the current
 incumbent (webhook.site) hasn't shipped serious new features
@@ -70,6 +70,13 @@ its weight against the curl-then-look-at-the-Inspector flow.
 - Static mock reply (status + content-type + body, plus an optional
   0–30s response delay to simulate a slow upstream) configurable
   per inbox.
+- Capture filter (allowlist) per inbox: only log requests matching
+  the configured methods / path globs / header or query rules (AND
+  across dimensions, OR within each). A non-matching request is still
+  answered normally (mock reply / forward / ack) but is not persisted
+  and consumes neither the 1,000-capture cap nor the rate window — the
+  filter is evaluated before a capture slot is reserved. Works in both
+  hosted and local `peekgrok` sniffer mode (shared `CaptureRequest`).
 - "Copy as curl" button on every capture + the empty state.
 - Inspector features: search input (regex + field selector +
   natural-language examples), schema sparkline sidebar panel
@@ -332,7 +339,7 @@ the rationale + effort remain as historical record.
 ## Update log
 
 - **v1.3**: usability batch aimed at the daily debug loop —
-  turns PeekHook from "look at webhooks" into "iterate on them."
+  turns peekhook from "look at webhooks" into "iterate on them."
   Seven features, all backend + frontend + tests:
   1. **Replay to forward target** — `POST /replay` gained
      `mode: 'forward'`, re-sending a captured event to the inbox's

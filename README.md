@@ -1,4 +1,4 @@
-# PeekHook
+# peekhook
 
 A free, anonymous webhook inspector. No signup, expires in 7 days.
 
@@ -49,6 +49,11 @@ or set `MONGODB_URI` to any reachable Mongo URL.
 - Configure a static mock reply (status + content-type + body), with an
   optional **response delay** (0–30s) to simulate a slow / timing-out
   upstream and exercise your client's retry logic
+- **Filter what gets logged** with a per-inbox allowlist — match on
+  method, path globs (`/api/*`), or header / query rules. Requests that
+  don't match still get a reply but aren't captured (and don't count
+  against the 1,000-capture cap), so you can point a noisy app at
+  `peekgrok` and only keep the endpoint you care about
 - **Replay** a captured event against the mock reply, or against the
   inbox's configured forward target — optionally **editing** the method
   and body first (the tweak-and-re-send debug loop)
@@ -76,7 +81,7 @@ open http://localhost:5173/i/<token>
 ## Run it locally (peekgrok CLI)
 
 `peekgrok` is a single self-contained binary that runs the full
-PeekHook stack — capture endpoint, inspector UI, SSE stream, and
+peekhook stack — capture endpoint, inspector UI, SSE stream, and
 MCP server — on your machine, backed by SQLite instead of Mongo.
 No database to install, no signup; data lives in
 `~/.peekhook/peekgrok.db`.
